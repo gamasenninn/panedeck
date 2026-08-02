@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>ClaudeDeck</title>
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+        background: #0d1117;
+        color: #e6edf3;
+        font-family: "Segoe UI", -apple-system, sans-serif;
+        font-size: 13px;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* --- ツールバー --- */
+      #toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        flex-shrink: 0;
+      }
+
+      #toolbar h1 {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        margin-right: 6px;
+      }
+
+      #toolbar h1 span {
+        color: #58a6ff;
+      }
+
+      button {
+        background: #21262d;
+        color: #e6edf3;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        background: #30363d;
+        border-color: #8b949e;
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      button.primary {
+        background: #238636;
+        border-color: #2ea043;
+      }
+
+      button.primary:hover:not(:disabled) {
+        background: #2ea043;
+      }
+
+      button.danger:hover:not(:disabled) {
+        background: #6e2530;
+        border-color: #f85149;
+      }
+
+      input[type="text"] {
+        background: #0d1117;
+        color: #e6edf3;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+
+      input[type="text"]:focus {
+        outline: none;
+        border-color: #58a6ff;
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      #session-count {
+        color: #8b949e;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* ネイティブの alert はテストを止めてしまうので、通知はここに出す */
+      #message {
+        font-size: 12px;
+        max-width: 380px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #ff7b72;
+      }
+
+      #message.info {
+        color: #3fb950;
+      }
+
+      .field {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #8b949e;
+        font-size: 12px;
+      }
+
+      /* --- グリッド --- */
+      #grid {
+        flex: 1;
+        overflow: auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+        grid-auto-rows: minmax(260px, 1fr);
+        gap: 10px;
+        padding: 10px;
+      }
+
+      #grid.empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      #empty-state {
+        color: #8b949e;
+        text-align: center;
+        line-height: 1.9;
+      }
+
+      #empty-state code {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-family: "Cascadia Code", Consolas, monospace;
+      }
+
+      /* --- ペイン --- */
+      .pane {
+        display: flex;
+        flex-direction: column;
+        background: #010409;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        overflow: hidden;
+        min-height: 0;
+      }
+
+      .pane.focused {
+        border-color: #58a6ff;
+      }
+
+      .pane-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+        flex-shrink: 0;
+      }
+
+      .pane-title {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .pane-cwd {
+        color: #6e7681;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .pane-status {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      .pane-status[data-status="running"] {
+        background: #0d419d;
+        color: #79c0ff;
+      }
+
+      .pane-status[data-status="waiting"] {
+        background: #7d4e00;
+        color: #ffd33d;
+      }
+
+      .pane-status[data-status="idle"] {
+        background: #21262d;
+        color: #8b949e;
+      }
+
+      .pane-status[data-status="exited"] {
+        background: #67060c;
+        color: #ff7b72;
+      }
+
+      .pane-header button {
+        padding: 2px 7px;
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+
+      .pane-body {
+        flex: 1;
+        min-height: 0;
+        padding: 4px;
+      }
+
+      .pane-body .xterm {
+        height: 100%;
+      }
+
+      /* --- ブロードキャストバー --- */
+      #broadcast-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        background: #161b22;
+        border-top: 1px solid #30363d;
+        flex-shrink: 0;
+      }
+
+      #broadcast-input {
+        flex: 1;
+      }
+
+      #broadcast-target {
+        color: #8b949e;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      #keys {
+        display: flex;
+        gap: 4px;
+      }
+
+      #keys button {
+        padding: 5px 9px;
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 11px;
+      }
+
+      .divider {
+        width: 1px;
+        height: 22px;
+        background: #30363d;
+      }
+    </style>
+  </head>
+  <body>
+    <header id="toolbar">
+      <h1>Claude<span>Deck</span></h1>
+
+      <div class="field">
+        <label for="launch-command">起動コマンド</label>
+        <input
+          type="text"
+          id="launch-command"
+          data-testid="launch-command"
+          value="claude"
+          size="12"
+        />
+      </div>
+
+      <button id="add-session" class="primary" data-testid="add-session">
+        + セッション追加
+      </button>
+
+      <div class="divider"></div>
+
+      <button id="save-workspace" data-testid="save-workspace">構成を保存</button>
+      <button id="restore-workspace" data-testid="restore-workspace">
+        構成を復元
+      </button>
+
+      <div class="spacer"></div>
+
+      <span id="message" data-testid="message"></span>
+      <span id="session-count" data-testid="session-count">0 セッション</span>
+      <button id="close-all" class="danger" data-testid="close-all">全終了</button>
+    </header>
+
+    <main id="grid" class="empty" data-testid="grid">
+      <div id="empty-state" data-testid="empty-state">
+        セッションがありません。<br />
+        <strong>+ セッション追加</strong> でディレクトリを選ぶと、そこで
+        <code>claude</code> が起動します。
+      </div>
+    </main>
+
+    <footer id="broadcast-bar">
+      <span id="broadcast-target" data-testid="broadcast-target">送信先: 全 0 ペイン</span>
+      <input
+        type="text"
+        id="broadcast-input"
+        data-testid="broadcast-input"
+        placeholder="選択中のペインへまとめて送信（未選択なら全ペイン）"
+      />
+      <button id="broadcast-send" class="primary" data-testid="broadcast-send">
+        送信
+      </button>
+
+      <div class="divider"></div>
+
+      <div id="keys">
+        <button data-key="enter" data-testid="key-enter">Enter</button>
+        <button data-key="esc" data-testid="key-esc">Esc</button>
+        <button data-key="ctrl-c" data-testid="key-ctrl-c">Ctrl+C</button>
+        <button data-key="up" data-testid="key-up">↑</button>
+        <button data-key="down" data-testid="key-down">↓</button>
+      </div>
+    </footer>
+
+    <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+    <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>

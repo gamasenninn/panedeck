@@ -1,0 +1,8 @@
+node_modules/
+.claude/
+test-results/
+playwright-report/
+tests/**/temp/*
+!tests/**/temp/.gitkeep
+logs/
+workspaces/
