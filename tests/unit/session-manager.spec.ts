@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+﻿import { test, expect } from "@playwright/test";
 import { SessionManager } from "../../lib/session-manager";
 import { STATUS, QUIET_MS } from "../../lib/status-detector";
 import { createFakePtyFactory, createFakeClock } from "./helpers/fake-pty";
@@ -31,7 +31,7 @@ test.describe("create", () => {
       rows: 40,
     });
 
-    const opts = ptyFactory.last().options;
+    const opts = ptyFactory.last()!.options;
     expect(opts.shell).toBe("pwsh");
     expect(opts.args).toEqual(["-NoLogo"]);
     expect(opts.cwd).toBe("C:\\app\\repo-a");
@@ -60,7 +60,7 @@ test.describe("create", () => {
     const { manager, now } = setup();
     const session = manager.create({ cwd: "x" });
     now.advance(QUIET_MS + 100);
-    expect(manager.get(session.id).status).toBe(STATUS.IDLE);
+    expect(manager.get(session.id)!.status).toBe(STATUS.IDLE);
   });
 });
 
@@ -106,7 +106,7 @@ test.describe("write", () => {
   test("終了済みセッションには書き込まない", () => {
     const { manager, ptyFactory } = setup();
     const a = manager.create({ cwd: "a" });
-    ptyFactory.last().emitExit(0);
+    ptyFactory.last()!.emitExit(0);
     expect(manager.write(a.id, "x")).toBe(false);
   });
 
@@ -114,7 +114,7 @@ test.describe("write", () => {
     const { manager, ptyFactory } = setup();
     const a = manager.create({ cwd: "a" });
     expect(manager.write(a.id, "")).toBe(true);
-    expect(ptyFactory.last().written).toEqual([""]);
+    expect(ptyFactory.last()!.written).toEqual([""]);
   });
 });
 
@@ -171,7 +171,7 @@ test.describe("resize", () => {
     const { manager, ptyFactory } = setup();
     const a = manager.create({ cwd: "a" });
     expect(manager.resize(a.id, 120, 50)).toBe(true);
-    expect(ptyFactory.last().resized).toEqual([{ cols: 120, rows: 50 }]);
+    expect(ptyFactory.last()!.resized).toEqual([{ cols: 120, rows: 50 }]);
   });
 
   test("存在しない id なら false", () => {
@@ -185,7 +185,7 @@ test.describe("close", () => {
     const { manager, ptyFactory } = setup();
     const a = manager.create({ cwd: "a" });
     expect(manager.close(a.id)).toBe(true);
-    expect(ptyFactory.last().killed).toBe(true);
+    expect(ptyFactory.last()!.killed).toBe(true);
     expect(manager.list()).toHaveLength(0);
     expect(manager.get(a.id)).toBeNull();
   });
@@ -209,22 +209,22 @@ test.describe("close", () => {
 test.describe("出力の受信", () => {
   test("onData に id 付きで通知する", () => {
     const { manager, ptyFactory } = setup();
-    const received = [];
+    const received: Array<{ id: string; data: string }> = [];
     manager.onData((id, data) => received.push({ id, data }));
 
     const a = manager.create({ cwd: "a" });
-    ptyFactory.last().emitData("hello");
+    ptyFactory.last()!.emitData("hello");
 
     expect(received).toEqual([{ id: a.id, data: "hello" }]);
   });
 
   test("onExit に id と終了コードを通知する", () => {
     const { manager, ptyFactory } = setup();
-    const received = [];
+    const received: Array<{ id: string; code: number }> = [];
     manager.onExit((id, code) => received.push({ id, code }));
 
     const a = manager.create({ cwd: "a" });
-    ptyFactory.last().emitExit(3);
+    ptyFactory.last()!.emitExit(3);
 
     expect(received).toEqual([{ id: a.id, code: 3 }]);
   });
@@ -232,11 +232,11 @@ test.describe("出力の受信", () => {
   test("終了後もセッションは一覧に残り、状態が exited になる", () => {
     const { manager, ptyFactory } = setup();
     const a = manager.create({ cwd: "a" });
-    ptyFactory.last().emitExit(1);
+    ptyFactory.last()!.emitExit(1);
 
     expect(manager.list()).toHaveLength(1);
-    expect(manager.get(a.id).status).toBe(STATUS.EXITED);
-    expect(manager.get(a.id).exitCode).toBe(1);
+    expect(manager.get(a.id)!.status).toBe(STATUS.EXITED);
+    expect(manager.get(a.id)!.exitCode).toBe(1);
   });
 });
 
@@ -244,8 +244,8 @@ test.describe("ログ", () => {
   test("受信した出力を蓄積する", () => {
     const { manager, ptyFactory } = setup();
     const a = manager.create({ cwd: "a" });
-    ptyFactory.last().emitData("foo");
-    ptyFactory.last().emitData("bar");
+    ptyFactory.last()!.emitData("foo");
+    ptyFactory.last()!.emitData("bar");
 
     expect(manager.getLog(a.id)).toBe("foobar");
   });
@@ -258,7 +258,7 @@ test.describe("ログ", () => {
   test("maxLogBytes を超えたら先頭から捨てる", () => {
     const { manager, ptyFactory } = setup({ maxLogBytes: 10 });
     const a = manager.create({ cwd: "a" });
-    ptyFactory.last().emitData("0123456789ABCDE");
+    ptyFactory.last()!.emitData("0123456789ABCDE");
 
     const log = manager.getLog(a.id);
     expect(log).toHaveLength(10);
@@ -282,33 +282,33 @@ test.describe("状態の算出", () => {
     const { manager, ptyFactory, now } = setup();
     const a = manager.create({ cwd: "a" });
     now.advance(5000);
-    ptyFactory.last().emitData("building...");
+    ptyFactory.last()!.emitData("building...");
 
-    expect(manager.get(a.id).status).toBe(STATUS.RUNNING);
+    expect(manager.get(a.id)!.status).toBe(STATUS.RUNNING);
   });
 
   test("出力が止まって静止したら idle", () => {
     const { manager, ptyFactory, now } = setup();
     const a = manager.create({ cwd: "a" });
-    ptyFactory.last().emitData("done");
+    ptyFactory.last()!.emitData("done");
     now.advance(QUIET_MS + 100);
 
-    expect(manager.get(a.id).status).toBe(STATUS.IDLE);
+    expect(manager.get(a.id)!.status).toBe(STATUS.IDLE);
   });
 
   test("Claude の入力ボックスで静止したら waiting", () => {
     const { manager, ptyFactory, now } = setup();
     const a = manager.create({ cwd: "a" });
-    ptyFactory.last().emitData("╭────╮\n│ >  │\n╰────╯");
+    ptyFactory.last()!.emitData("╭────╮\n│ >  │\n╰────╯");
     now.advance(QUIET_MS + 100);
 
-    expect(manager.get(a.id).status).toBe(STATUS.WAITING);
+    expect(manager.get(a.id)!.status).toBe(STATUS.WAITING);
   });
 
   test("list でも同じ状態が得られる", () => {
     const { manager, ptyFactory, now } = setup();
     manager.create({ cwd: "a" });
-    ptyFactory.last().emitData("│ > ");
+    ptyFactory.last()!.emitData("│ > ");
     now.advance(QUIET_MS + 100);
 
     expect(manager.list()[0].status).toBe(STATUS.WAITING);
@@ -372,12 +372,12 @@ test.describe("並べ替え", () => {
     // ペインを作り直さずに並べ替えたいので、pty もログも同じものが残る必要がある
     const { manager, ptyFactory, a, b, c } = setupThree();
     ptyFactory.created[0].emitData("AAA");
-    const ptyBefore = manager.sessions.get(a.id).pty;
+    const ptyBefore = manager.sessions.get(a.id)!.pty;
 
     manager.reorder([c.id, b.id, a.id]);
 
     expect(manager.getLog(a.id)).toBe("AAA");
-    expect(manager.sessions.get(a.id).pty).toBe(ptyBefore);
+    expect(manager.sessions.get(a.id)!.pty).toBe(ptyBefore);
     expect(manager.write(a.id, "x")).toBe(true);
   });
 
@@ -404,7 +404,7 @@ test.describe("エージェントプロファイル", () => {
     const session = manager.create({ cwd: "a", agent: "codex" });
 
     expect(session.agent).toBe("codex");
-    expect(manager.get(session.id).agent).toBe("codex");
+    expect(manager.get(session.id)!.agent).toBe("codex");
   });
 
   test("未指定なら既定の claude になる（現行動作の維持）", () => {
@@ -427,8 +427,8 @@ test.describe("エージェントプロファイル", () => {
     ptyFactory.created[1].emitData("│ > ");
     now.advance(QUIET_MS + 100);
 
-    expect(manager.get(claude.id).status).toBe(STATUS.WAITING);
-    expect(manager.get(codex.id).status).toBe(STATUS.IDLE);
+    expect(manager.get(claude.id)!.status).toBe(STATUS.WAITING);
+    expect(manager.get(codex.id)!.status).toBe(STATUS.IDLE);
   });
 
   test("共通の確認プロンプトはどのエージェントでも入力待ちになる", () => {
@@ -440,17 +440,17 @@ test.describe("エージェントプロファイル", () => {
     ptyFactory.created[1].emitData("Continue? (y/n)");
     now.advance(QUIET_MS + 100);
 
-    expect(manager.get(claude.id).status).toBe(STATUS.WAITING);
-    expect(manager.get(codex.id).status).toBe(STATUS.WAITING);
+    expect(manager.get(claude.id)!.status).toBe(STATUS.WAITING);
+    expect(manager.get(codex.id)!.status).toBe(STATUS.WAITING);
   });
 
   test("未知の agent でも既定のパターンで判定できる", () => {
     const { manager, ptyFactory, now } = setup();
     const session = manager.create({ cwd: "a", agent: "nonexistent" });
-    ptyFactory.last().emitData("│ > ");
+    ptyFactory.last()!.emitData("│ > ");
     now.advance(QUIET_MS + 100);
 
-    expect(manager.get(session.id).status).toBe(STATUS.WAITING);
+    expect(manager.get(session.id)!.status).toBe(STATUS.WAITING);
   });
 });
 
@@ -560,21 +560,21 @@ test.describe("起動コマンド (initialCommand)", () => {
     const { manager, ptyFactory } = setup();
     manager.create({ cwd: "a", initialCommand: "claude" });
 
-    expect(ptyFactory.last().written).toEqual(["claude\r"]);
+    expect(ptyFactory.last()!.written).toEqual(["claude\r"]);
   });
 
   test("未指定なら何も書き込まない", () => {
     const { manager, ptyFactory } = setup();
     manager.create({ cwd: "a" });
 
-    expect(ptyFactory.last().written).toEqual([]);
+    expect(ptyFactory.last()!.written).toEqual([]);
   });
 
   test("空文字列なら何も書き込まない（素のシェルのまま）", () => {
     const { manager, ptyFactory } = setup();
     manager.create({ cwd: "a", initialCommand: "" });
 
-    expect(ptyFactory.last().written).toEqual([]);
+    expect(ptyFactory.last()!.written).toEqual([]);
   });
 
   test("スナップショットに含まれる", () => {
@@ -582,7 +582,7 @@ test.describe("起動コマンド (initialCommand)", () => {
     const session = manager.create({ cwd: "a", initialCommand: "codex" });
 
     expect(session.initialCommand).toBe("codex");
-    expect(manager.get(session.id).initialCommand).toBe("codex");
+    expect(manager.get(session.id)!.initialCommand).toBe("codex");
   });
 
   test("セッションごとに独立した値を持つ", () => {
@@ -606,13 +606,13 @@ test.describe("起動コマンド (initialCommand)", () => {
     const { manager, ptyFactory } = setup();
     manager.create({ cwd: "a", initialCommand: "  claude  " });
 
-    expect(ptyFactory.last().written).toEqual(["claude\r"]);
+    expect(ptyFactory.last()!.written).toEqual(["claude\r"]);
   });
 
   test("空白だけなら何も書き込まない", () => {
     const { manager, ptyFactory } = setup();
     manager.create({ cwd: "a", initialCommand: "   " });
 
-    expect(ptyFactory.last().written).toEqual([]);
+    expect(ptyFactory.last()!.written).toEqual([]);
   });
 });

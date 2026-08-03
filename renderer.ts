@@ -1,12 +1,15 @@
 // contextBridge が公開したグローバル `deck` と同名で const 宣言すると
 // "Identifier 'deck' has already been declared" でスクリプト全体が落ちるため、別名にする
-const api = window.deck;
+// ES モジュールとして読み込まれる（index.html の <script type="module">）。
+// バンドラは挟まないので、相対 import には拡張子 .js を書くこと。
+// xterm は npm の bare import が解決できないため、script タグで読み込んだ
+// グローバル（Terminal / FitAddon）をそのまま使う。
+import type { Session, SessionStatus } from "./types/panedeck";
+import { STATUS_LABELS, WAITING, KEY_SEQUENCES } from "./renderer/constants.js";
 
-// このファイルは import を持たない「古典スクリプト」のままにする。index.html が
-// script タグで直接読み、CSP も script-src 'self' のままで済む。型の参照は
-// import(...) 形式にとどめる（値の import を書くとモジュール化して壊れる）。
-type Session = import("./types/panedeck").Session;
-type SessionStatus = import("./types/panedeck").SessionStatus;
+// contextBridge が公開したグローバル。モジュールなので、かつて衝突を招いた
+// `const deck` という名前を避ける必要はもう無いが、呼び分けやすさで api のまま
+const api = window.deck;
 
 /**
  * 1 ペイン分の持ち物。
@@ -58,15 +61,6 @@ const creating = new Set<string>();
 
 let focusedId: string | null = null;
 
-const STATUS_LABELS: Record<SessionStatus, string> = {
-  running: "実行中",
-  waiting: "入力待ち",
-  idle: "待機",
-  exited: "終了",
-};
-
-/** 「入力待ちのみ」で絞るときの状態 */
-const WAITING: SessionStatus = "waiting";
 
 /**
  * 端末の文字サイズ。メインプロセスの設定を写したもの。
@@ -90,15 +84,6 @@ function showMessage(text: string, { error = false }: { error?: boolean } = {}) 
   messageEl.textContent = text;
   messageEl.classList.toggle("info", !error);
 }
-
-/** 特殊キーのエスケープシーケンス */
-const KEY_SEQUENCES: Record<string, string> = {
-  enter: "\r",
-  esc: "\x1b",
-  "ctrl-c": "\x03",
-  up: "\x1b[A",
-  down: "\x1b[B",
-};
 
 // ---------------------------------------------------------------- ペイン生成
 
@@ -172,13 +157,13 @@ async function createPane(session: Session): Promise<Pane> {
   el.addEventListener("mousedown", () => setFocused(session.id));
   selectEl.addEventListener("change", updateBroadcastTarget);
 
-  el.querySelector(".pane-close").addEventListener("click", async (event) => {
+  el.querySelector(".pane-close")!.addEventListener("click", async (event) => {
     event.stopPropagation();
     await api.closeSession(session.id);
     await sync();
   });
 
-  el.querySelector(".pane-savelog").addEventListener("click", async (event) => {
+  el.querySelector(".pane-savelog")!.addEventListener("click", async (event) => {
     event.stopPropagation();
     await api.saveLog(session.id);
   });
@@ -605,9 +590,9 @@ async function sendKey(key) {
 
 // ---------------------------------------------------------------- イベント
 
-document.getElementById("add-session").addEventListener("click", addSession);
+document.getElementById("add-session")!.addEventListener("click", addSession);
 
-document.getElementById("broadcast-send").addEventListener("click", sendBroadcast);
+document.getElementById("broadcast-send")!.addEventListener("click", sendBroadcast);
 
 broadcastInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") sendBroadcast();
@@ -633,7 +618,7 @@ document.getElementById("close-all")!.addEventListener("click", async () => {
   await sync();
 });
 
-document.getElementById("save-workspace").addEventListener("click", async () => {
+document.getElementById("save-workspace")!.addEventListener("click", async () => {
   const result = await api.saveWorkspace("panedeck");
   if (result.ok) {
     showMessage(`構成を保存しました: ${result.filePath}`);
@@ -643,7 +628,7 @@ document.getElementById("save-workspace").addEventListener("click", async () => 
 });
 
 document
-  .getElementById("restore-workspace")
+  .getElementById("restore-workspace")!
   .addEventListener("click", async () => {
     const result = await api.restoreWorkspace({
       initialCommand: launchCommandInput.value.trim(),

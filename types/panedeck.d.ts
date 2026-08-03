@@ -162,14 +162,9 @@ export interface RestoreResult {
  * 呼び出し側を検査させる。
  */
 export interface DeckApi {
-  /**
-   * 判別可能な union にはしていない。`strictNullChecks` を切っている間は
-   * `if (!result.ok)` での絞り込みが効かず、かえって偽の指摘が出るため。
-   * 完全な .ts 化（#6）で strict を上げるときに union へ戻すこと。
-   */
   createSession(
     options: CreateSessionOptions
-  ): Promise<{ ok: boolean; session?: Session; error?: string }>;
+  ): Promise<{ ok: true; session: Session } | { ok: false; error: string }>;
   listSessions(): Promise<Session[]>;
   closeSession(id: string): Promise<boolean>;
   closeAllSessions(): Promise<number>;
@@ -195,7 +190,7 @@ export interface DeckApi {
   getSettings(): Promise<Settings>;
   setSettings(
     settings: Partial<Settings>
-  ): Promise<{ ok: boolean; settings?: Settings; error?: string }>;
+  ): Promise<{ ok: true; settings: Settings } | { ok: false; error: string }>;
 
   getLog(id: string): Promise<string>;
   saveLog(id: string): Promise<FileResult>;

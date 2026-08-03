@@ -272,7 +272,7 @@ test.describe("saveWorkspace / loadWorkspace", () => {
       const filePath = path.join(TEMP_DIR, "try-empty.json");
       saveWorkspace(filePath, []);
 
-      expect(tryLoadWorkspace(filePath).sessions).toEqual([]);
+      expect(tryLoadWorkspace(filePath)!.sessions).toEqual([]);
     });
   });
 
@@ -300,7 +300,7 @@ test.describe("saveWorkspace / loadWorkspace", () => {
   test("エージェントプロファイルも往復する（自動復元用）", () => {
     const filePath = path.join(TEMP_DIR, "auto.json");
     saveWorkspace(filePath, MIXED_SESSIONS);
-    expect(tryLoadWorkspace(filePath).sessions).toHaveLength(3);
+    expect(tryLoadWorkspace(filePath)!.sessions).toHaveLength(3);
   });
 
   test("セッションごとに異なる起動コマンドが往復する", () => {

@@ -51,7 +51,7 @@ test("実プロセスを起動して出力を受け取り、終了を検知す�
     ...REAL_SHELL,
   });
 
-  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(`セッションを起動できません: ${result.error}`);
   const { id } = result.session;
 
   await waitForPaneCount(page, 1);
@@ -70,6 +70,7 @@ test("存在しない cwd を指定したらエラーを返す（アプリは落
   });
 
   expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("エラーになるはずのセッションが起動してしまった");
   expect(result.error).toBeTruthy();
 
   // アプリは生きていて操作を受け付ける

@@ -1,11 +1,11 @@
 {
   "//": [
     "レンダラのビルド設定。main 側（tsconfig.build.json）とは出力の性質が違う。",
-    "renderer.ts は import を持たない『古典スクリプト』のままにしてあり、",
-    "tsc はそれをそのまま（型を落としただけの）スクリプトとして出す。",
-    "こうすることで index.html は script タグで読むだけで済み、",
-    "CSP も script-src 'self' のまま変えずにいられる。",
-    "値の import を 1 つでも書くとモジュール出力になり、この前提が崩れる。"
+    "ブラウザがそのまま読める ES モジュールとして出す（バンドラは挟まない）。",
+    "index.html は <script type=\"module\"> で読み、CSP は script-src 'self' のまま。",
+    "相対 import には拡張子 .js を書くこと。ブラウザは解決を補完しない。",
+    "npm パッケージの bare import は解決できないので、xterm は今までどおり",
+    "script タグで読み込んだグローバルを使う（types/globals.d.ts で宣言）。"
   ],
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -16,10 +16,8 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": [],
 
-    // import / export を持たないファイルをスクリプトとして扱う。
-    // 既定の "auto" は node 系の module 設定だとモジュール扱いにしてしまい、
-    // 出力の先頭に exports への代入が付いてブラウザで落ちる
-    "moduleDetection": "legacy"
+    "module": "esnext",
+    "moduleResolution": "bundler"
   },
-  "include": ["renderer.ts", "types/**/*.d.ts"]
+  "include": ["renderer.ts", "renderer/**/*.ts", "types/**/*.d.ts"]
 }

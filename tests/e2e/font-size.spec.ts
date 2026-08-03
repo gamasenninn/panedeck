@@ -31,11 +31,17 @@ test.afterAll(async () => {
 
 const fontSizeInput = () => page.locator("[data-testid=font-size]");
 
-/** 画面上の全ペインが実際に使っている文字サイズ */
-function paneFontSizes() {
+/**
+ * 画面上の全ペインが実際に使っている文字サイズ。
+ *
+ * レンダラの内部を覗かず、xterm が実際に描画に使っている要素の計算済みスタイルを
+ * 見る。設定が端末まで届いているかを、表示された結果として確かめられる。
+ */
+function paneFontSizes(): Promise<number[]> {
   return page.evaluate(() =>
-    // @ts-ignore renderer.js 最上位の const。古典スクリプトなので名前で参照できる
-    [...panes.values()].map((pane) => pane.term.options.fontSize)
+    [...document.querySelectorAll<HTMLElement>(".pane .xterm-rows")].map((el) =>
+      parseFloat(getComputedStyle(el).fontSize)
+    )
   );
 }
 

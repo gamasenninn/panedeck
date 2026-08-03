@@ -260,7 +260,7 @@ test.describe("detectStatus - 待機パターンの差し替え", () => {
     expect(
       detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: notAnArray })
     ).toBe(STATUS.WAITING);
-    expect(detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: null })).toBe(
+    expect(detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: null as any })).toBe(
       STATUS.WAITING
     );
   });

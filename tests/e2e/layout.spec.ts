@@ -49,12 +49,21 @@ async function givenPanes(titles) {
   await waitForPaneCount(page, titles.length);
 }
 
-/** レンダラ経由で並べ替える（D&D の結果として起きることと同じ） */
-async function reorderTo(titles) {
+/**
+ * レンダラ経由で並べ替える（D&D の結果として起きることと同じ）。
+ *
+ * ペインとセッションの対応は DOM から取る（`data-session-id`）。レンダラの
+ * 内部変数には触れない。
+ */
+async function reorderTo(titles: string[]) {
   await page.evaluate(async (wanted) => {
-    // @ts-ignore renderer.js 最上位の const
-    const byTitle = new Map([...panes.values()].map((p) => [p.titleEl.textContent, p.id]));
-    await window.deck.reorderSessions(wanted.map((t) => byTitle.get(t)));
+    const byTitle = new Map(
+      [...document.querySelectorAll<HTMLElement>(".pane")].map((el) => [
+        el.querySelector("[data-testid=pane-title]")!.textContent!,
+        el.dataset.sessionId!,
+      ])
+    );
+    await window.deck.reorderSessions(wanted.map((t) => byTitle.get(t)!));
   }, titles);
 }
 
@@ -196,7 +205,7 @@ test.describe("ワークスペースとの往復", () => {
 test.describe("列数", () => {
   const gridColumns = () =>
     page.evaluate(
-      () => getComputedStyle(document.getElementById("grid")).gridTemplateColumns
+      () => getComputedStyle(document.getElementById("grid")!).gridTemplateColumns
     );
 
   test("既定は自動", async () => {

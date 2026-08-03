@@ -76,15 +76,19 @@ npm run rebuild    # node-pty を Electron ABI 向けに再ビルド
 | `tsconfig.build.json` | main / preload / lib を `dist/` へ出す |
 | `tsconfig.renderer.json` | renderer を `dist/` へ出す |
 
-renderer を分けているのは出力の性質が違うため。**`renderer.ts` は import を持たない
-「古典スクリプト」のままにしてある。** index.html が script タグで直接読み、CSP も
-`script-src 'self'` のまま変えずに済む。
+renderer を分けているのは出力の性質が違うため。**ブラウザがそのまま読む ES モジュール**
+として出す（バンドラは挟まない）。index.html は `<script type="module">` で読み、
+CSP は `script-src 'self'` のまま。
 
-- 型の参照は `type X = import("./types/panedeck").X` の形にとどめる。
-  **値の import を 1 つでも書くとモジュール出力になり、この前提が崩れる**
-- `moduleDetection: "legacy"` が要る。既定の `"auto"` は node 系の module 設定だと
-  import の無いファイルもモジュール扱いにし、出力の先頭に `exports` への代入が
-  付いてブラウザで落ちる
+- **相対 import には拡張子 `.js` を書くこと。** バンドラが居ないので、ブラウザが
+  そのまま解決する。`./renderer/constants.js` のように書く（`.ts` ではない）
+- **npm の bare import は解決できない。** xterm は今までどおり script タグで読み、
+  グローバル（`Terminal` / `FitAddon`）を使う。宣言は `types/globals.d.ts`
+- レンダラ側の分割ファイルは `renderer/` に置く
+
+以前は古典スクリプトだった。TS 化の移行リスクを抑えるため読み込み方を据え置いた
+名残で、その間は**トップレベルの名前がすべてグローバルと競合**していた
+（HANDOVER にある `const deck` の事故がこれ）。モジュール化でこの危険は消えた。
 
 ### 型の置き場
 
@@ -96,15 +100,25 @@ renderer を分けているのは出力の性質が違うため。**`renderer.ts
 - `preload.ts` は `DeckApi` として型を付ける。チャンネル名やペイロードを変えたとき、
   preload と呼び出し側のどちらかだけ直し忘れると検査で落ちる
 
-### 緩めてあるもの
+### 厳格さ
 
-`strict` / `noImplicitAny` / `strictNullChecks` は意図的に off。段階的に上げる方針で、
-`strictNullChecks` を有効にするのは #6 の残り作業。有効にしたら
-`createSession` の戻り値を判別可能な union へ戻すこと（今は絞り込みが効かないため
-平坦な形にしてある）。
+`strictNullChecks` は **有効**。`strict` / `noImplicitAny` はまだ off で、
+これらを上げるのは今後の作業。
+
+`createSession` / `setSettings` の戻り値は**判別可能な union**。`if (!result.ok)` で
+絞り込めるので、成功時にしか無い項目へ誤って触ると検査で落ちる。
 
 テストが**わざと不正な値を渡す**箇所（`onlyStatus: "nonsense"` など）は `as any` で
 明示的に外す。「意図的な不正入力」だと読めるようにするため。
+
+### E2E はレンダラの内部に触らない
+
+以前は `page.evaluate(() => panes...)` でレンダラのトップレベル変数を覗いていた。
+古典スクリプトだから届いていただけで、モジュール化すると壊れる。
+
+いまは DOM から観測する。文字サイズは `.pane .xterm-rows` の計算済みスタイル、
+セッションとペインの対応は `.pane[data-session-id]`。**表示された結果を見るほうが
+テストとして素直**でもある。
 
 ### 移行で踏んだ落とし穴
 

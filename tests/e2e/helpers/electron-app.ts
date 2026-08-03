@@ -43,22 +43,22 @@ export async function closeApp(electronApp: ElectronApplication) {
 export async function useFakePty(electronApp: ElectronApplication) {
   await electronApp.evaluate(() => {
     global.__fakePtys = [];
-    global.__sessionManager.ptyFactory = (options) => {
-      const dataHandlers = [];
-      const exitHandlers = [];
+    global.__sessionManager.ptyFactory = (options: unknown) => {
+      const dataHandlers: Array<(data: string) => void> = [];
+      const exitHandlers: Array<(event: { exitCode: number }) => void> = [];
       const fake = {
         options,
-        written: [],
+        written: [] as string[],
         killed: false,
-        write: (data) => fake.written.push(data),
+        write: (data: string) => fake.written.push(data),
         resize: () => {},
         kill: () => {
           fake.killed = true;
         },
-        onData: (cb) => dataHandlers.push(cb),
-        onExit: (cb) => exitHandlers.push(cb),
-        emitData: (data) => dataHandlers.forEach((cb) => cb(data)),
-        emitExit: (exitCode) =>
+        onData: (cb: (data: string) => void) => dataHandlers.push(cb),
+        onExit: (cb: (event: { exitCode: number }) => void) => exitHandlers.push(cb),
+        emitData: (data: string) => dataHandlers.forEach((cb) => cb(data)),
+        emitExit: (exitCode: number) =>
           exitHandlers.forEach((cb) => cb({ exitCode })),
       };
       global.__fakePtys.push(fake);

@@ -19,7 +19,7 @@
 
     "strict": false,
     "noImplicitAny": false,
-    "strictNullChecks": false,
+    "strictNullChecks": true,
 
     "resolveJsonModule": true,
     "esModuleInterop": true,

@@ -120,7 +120,7 @@ test.describe("有効なとき", () => {
 
     const named = () => logFiles().find((n) => n.startsWith("survivor-"));
     await expect.poll(() => Boolean(named())).toBe(true);
-    const name = named();
+    const name = named()!;
 
     await closeApp(electronApp);
     electronApp = null;
