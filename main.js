@@ -5,9 +5,13 @@ const os = require("os");
 const pty = require("node-pty");
 
 const { SessionManager } = require("./lib/session-manager");
-const { saveWorkspace, loadWorkspace } = require("./lib/workspace");
+const {
+  saveWorkspace,
+  loadWorkspace,
+  tryLoadWorkspace,
+} = require("./lib/workspace");
 const { listProfiles } = require("./lib/agent-profiles");
-const { readSettings, writeSettings } = require("./lib/settings");
+const { readSettings, updateSettings } = require("./lib/settings");
 
 let mainWindow;
 
@@ -23,6 +27,55 @@ function settingsPath() {
     process.env.PANEDECK_SETTINGS_PATH ||
     path.join(app.getPath("userData"), "settings.json")
   );
+}
+
+/**
+ * 自動復元用の構成ファイル。設定ファイルと同じ場所に置く。
+ *
+ * こうしておくと保存先の差し替えが 1 つで済み、テストが実ユーザーの
+ * userData を汚さない。ユーザーが明示的に保存するワークスペースとは別物で、
+ * こちらはセッションの増減のたびに黙って上書きされる。
+ */
+function autoRestorePath() {
+  return path.join(path.dirname(settingsPath()), "last-session.json");
+}
+
+/**
+ * 現在のセッション構成を自動保存する。
+ *
+ * 失敗しても投げない。これは利便のための控えであって、書けなかったからといって
+ * セッションの生成や終了そのものを失敗させるべきではない。明示的な
+ * 「構成を保存」は従来どおり失敗を呼び出し側へ返す。
+ */
+function persistSessions() {
+  try {
+    saveWorkspace(autoRestorePath(), sessionManager.list(), {
+      name: "last-session",
+    });
+  } catch {
+    // 控えが残らないだけなので、起動中の操作は続行させる
+  }
+}
+
+/**
+ * 前回の構成を復元する。
+ *
+ * 設定で無効なら何もしない。ファイルが無い・壊れているときも黙って諦める
+ * （初回起動では必ず「無い」を通る）。
+ */
+function restoreLastSession() {
+  if (!readSettings(settingsPath()).autoRestore) return;
+
+  const workspace = tryLoadWorkspace(autoRestorePath());
+  if (!workspace) return;
+
+  for (const entry of workspace.sessions) {
+    try {
+      sessionManager.create(entry);
+    } catch {
+      // 1 つのディレクトリが消えていても、残りは開く
+    }
+  }
 }
 
 /** OS 既定のシェル */
@@ -77,7 +130,12 @@ function createWindow() {
   mainWindow.loadFile("index.html");
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // ウィンドウより先に復元する。レンダラは一覧をポーリングして追従し、
+  // それまでの出力は各セッションのログに溜まって初回描画時に流し込まれる
+  restoreLastSession();
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   sessionManager.closeAll();
@@ -106,6 +164,7 @@ ipcMain.handle("session:create", (_, options = {}) => {
       agent: options.agent,
     });
 
+    persistSessions();
     return { ok: true, session };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -117,9 +176,17 @@ ipcMain.handle("session:list", () => sessionManager.list());
 // 判定に使う正規表現は含まない（IPC に載らないため）。判定はメイン側で行う
 ipcMain.handle("agent:list", () => listProfiles());
 
-ipcMain.handle("session:close", (_, id) => sessionManager.close(id));
+ipcMain.handle("session:close", (_, id) => {
+  const closed = sessionManager.close(id);
+  persistSessions();
+  return closed;
+});
 
-ipcMain.handle("session:closeAll", () => sessionManager.closeAll());
+ipcMain.handle("session:closeAll", () => {
+  const count = sessionManager.closeAll();
+  persistSessions();
+  return count;
+});
 
 ipcMain.handle("session:broadcast", (_, { data, ids, options }) =>
   sessionManager.broadcast(data, ids, options)
@@ -148,8 +215,9 @@ ipcMain.handle("settings:get", () => readSettings(settingsPath()));
 
 ipcMain.handle("settings:set", (_, settings) => {
   try {
-    // 書けた値をそのまま返す。レンダラは丸められた後の値を表示に使う
-    return { ok: true, settings: writeSettings(settingsPath(), settings) };
+    // 変更された項目だけが送られてくるので重ねて書く。
+    // 書けた値をそのまま返し、レンダラは丸められた後の値を表示に使う
+    return { ok: true, settings: updateSettings(settingsPath(), settings) };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -217,6 +285,7 @@ ipcMain.handle("workspace:restore", async (_, options = {}) => {
         agent: entry.agent || options.agent,
       })
     );
+    persistSessions();
     return { ok: true, name: workspace.name, sessions: created };
   } catch (err) {
     return { ok: false, error: err.message };

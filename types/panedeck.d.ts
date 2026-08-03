@@ -120,6 +120,8 @@ export interface Workspace {
 export interface Settings {
   /** 端末の文字サイズ (px) */
   fontSize: number;
+  /** 起動時に前回のセッション構成を自動で復元するか */
+  autoRestore: boolean;
 }
 
 /** 一斉送信の絞り込み */

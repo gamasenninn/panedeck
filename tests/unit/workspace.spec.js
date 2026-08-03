@@ -6,6 +6,7 @@ const {
   parseWorkspace,
   saveWorkspace,
   loadWorkspace,
+  tryLoadWorkspace,
   WORKSPACE_VERSION,
 } = require("../../lib/workspace");
 
@@ -229,6 +230,55 @@ test.describe("saveWorkspace / loadWorkspace", () => {
     expect(fs.existsSync(filePath)).toBe(true);
   });
 
+  test.describe("tryLoadWorkspace（自動復元用の読み込み）", () => {
+    test("正しいファイルは loadWorkspace と同じ結果を返す", () => {
+      const filePath = path.join(TEMP_DIR, "try-ok.json");
+      saveWorkspace(filePath, SESSIONS, { name: "自動" });
+
+      expect(tryLoadWorkspace(filePath)).toEqual(loadWorkspace(filePath));
+    });
+
+    test("ファイルが無ければ null を返す（例外にしない）", () => {
+      // 初回起動では必ずこの経路を通る。無いことは異常ではない
+      const filePath = path.join(TEMP_DIR, "try-missing.json");
+      expect(tryLoadWorkspace(filePath)).toBeNull();
+    });
+
+    test("JSON が壊れていても null を返す", () => {
+      const filePath = path.join(TEMP_DIR, "try-broken.json");
+      fs.writeFileSync(filePath, "{ これは JSON ではない", "utf8");
+
+      expect(() => tryLoadWorkspace(filePath)).not.toThrow();
+      expect(tryLoadWorkspace(filePath)).toBeNull();
+    });
+
+    test("形が違っても null を返す", () => {
+      const filePath = path.join(TEMP_DIR, "try-shape.json");
+      fs.writeFileSync(filePath, JSON.stringify({ version: 1 }), "utf8");
+
+      expect(tryLoadWorkspace(filePath)).toBeNull();
+    });
+
+    test("バージョンが新しすぎても null を返す", () => {
+      const filePath = path.join(TEMP_DIR, "try-version.json");
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify({ version: WORKSPACE_VERSION + 1, sessions: [] }),
+        "utf8"
+      );
+
+      expect(tryLoadWorkspace(filePath)).toBeNull();
+    });
+
+    test("セッションが空のファイルは null ではなく空の構成を返す", () => {
+      // 「全部閉じた状態」を保存したのであって、壊れているわけではない
+      const filePath = path.join(TEMP_DIR, "try-empty.json");
+      saveWorkspace(filePath, []);
+
+      expect(tryLoadWorkspace(filePath).sessions).toEqual([]);
+    });
+  });
+
   test("空のワークスペースも保存・復元できる", () => {
     const filePath = path.join(TEMP_DIR, "empty.json");
     saveWorkspace(filePath, []);
@@ -248,6 +298,12 @@ test.describe("saveWorkspace / loadWorkspace", () => {
       "codex",
       undefined,
     ]);
+  });
+
+  test("エージェントプロファイルも往復する（自動復元用）", () => {
+    const filePath = path.join(TEMP_DIR, "auto.json");
+    saveWorkspace(filePath, MIXED_SESSIONS);
+    expect(tryLoadWorkspace(filePath).sessions).toHaveLength(3);
   });
 
   test("セッションごとに異なる起動コマンドが往復する", () => {

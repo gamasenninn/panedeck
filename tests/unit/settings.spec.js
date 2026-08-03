@@ -8,6 +8,7 @@ const {
   normalizeSettings,
   readSettings,
   writeSettings,
+  updateSettings,
 } = require("../../lib/settings");
 
 const TEMP_DIR = path.join(__dirname, "temp-settings");
@@ -63,7 +64,33 @@ test.describe("normalizeSettings", () => {
 
   test("未知のフィールドは持ち込まない", () => {
     const settings = normalizeSettings({ fontSize: 14, evil: "rm -rf" });
-    expect(Object.keys(settings)).toEqual(["fontSize"]);
+    expect(Object.keys(settings).sort()).toEqual(["autoRestore", "fontSize"]);
+  });
+});
+
+test.describe("normalizeSettings - 自動復元", () => {
+  test("既定は有効", () => {
+    // 無ければ何も起きないので、既定を有効にしても初回起動の挙動は変わらない
+    expect(DEFAULT_SETTINGS.autoRestore).toBe(true);
+    expect(normalizeSettings({}).autoRestore).toBe(true);
+  });
+
+  test("真偽値はそのまま通す", () => {
+    expect(normalizeSettings({ autoRestore: false }).autoRestore).toBe(false);
+    expect(normalizeSettings({ autoRestore: true }).autoRestore).toBe(true);
+  });
+
+  test("真偽値でない値は既定にする", () => {
+    for (const bogus of ["yes", 1, 0, null, undefined, {}, []]) {
+      expect(normalizeSettings({ autoRestore: bogus }).autoRestore).toBe(
+        DEFAULT_SETTINGS.autoRestore
+      );
+    }
+  });
+
+  test("文字サイズと独立して保存できる", () => {
+    const settings = normalizeSettings({ fontSize: 20, autoRestore: false });
+    expect(settings).toEqual({ fontSize: 20, autoRestore: false });
   });
 });
 
@@ -135,9 +162,68 @@ test.describe("writeSettings", () => {
     expect(writeSettings(filePath, { fontSize: 1 }).fontSize).toBe(FONT_SIZE_MIN);
   });
 
+  test("渡した項目だけを差し替え、他はそのまま書く", () => {
+    // writeSettings は渡された形をそのまま正規化するので、部分更新には使えない。
+    // 片方だけ送ると、もう片方が既定に戻ってしまう
+    const filePath = path.join(TEMP_DIR, "whole-write.json");
+    writeSettings(filePath, { fontSize: 20, autoRestore: false });
+    writeSettings(filePath, { fontSize: 24 });
+
+    expect(readSettings(filePath).autoRestore).toBe(DEFAULT_SETTINGS.autoRestore);
+  });
+
   test("書き込みに失敗したら例外を投げる（呼び出し側で通知する）", () => {
     // 既存ファイルをディレクトリ扱いする経路を作って失敗させる
     const filePath = path.join(TEMP_DIR, "readable.json", "settings.json");
     expect(() => writeSettings(filePath, { fontSize: 12 })).toThrow();
+  });
+});
+
+test.describe("updateSettings（部分更新）", () => {
+  test("渡した項目だけを差し替え、他は保つ", () => {
+    const filePath = path.join(TEMP_DIR, "update.json");
+    writeSettings(filePath, { fontSize: 20, autoRestore: false });
+
+    updateSettings(filePath, { fontSize: 24 });
+
+    expect(readSettings(filePath)).toEqual({ fontSize: 24, autoRestore: false });
+  });
+
+  test("もう一方だけでも同じように保たれる", () => {
+    const filePath = path.join(TEMP_DIR, "update2.json");
+    writeSettings(filePath, { fontSize: 20, autoRestore: true });
+
+    updateSettings(filePath, { autoRestore: false });
+
+    expect(readSettings(filePath)).toEqual({ fontSize: 20, autoRestore: false });
+  });
+
+  test("ファイルがまだ無ければ既定に重ねる", () => {
+    const filePath = path.join(TEMP_DIR, "update-new.json");
+
+    updateSettings(filePath, { fontSize: 16 });
+
+    expect(readSettings(filePath)).toEqual({
+      fontSize: 16,
+      autoRestore: DEFAULT_SETTINGS.autoRestore,
+    });
+  });
+
+  test("正規化後の設定全体を返す", () => {
+    const filePath = path.join(TEMP_DIR, "update-return.json");
+    expect(updateSettings(filePath, { fontSize: 999 })).toEqual({
+      fontSize: FONT_SIZE_MAX,
+      autoRestore: DEFAULT_SETTINGS.autoRestore,
+    });
+  });
+
+  test("空の更新でも壊れない", () => {
+    const filePath = path.join(TEMP_DIR, "update-empty.json");
+    writeSettings(filePath, { fontSize: 18, autoRestore: false });
+
+    expect(updateSettings(filePath, {})).toEqual({
+      fontSize: 18,
+      autoRestore: false,
+    });
   });
 });

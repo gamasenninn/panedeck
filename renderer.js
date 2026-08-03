@@ -45,6 +45,9 @@ const agentSelectEl = /** @type {HTMLSelectElement} */ (
 const fontSizeInput = /** @type {HTMLInputElement} */ (
   document.getElementById("font-size")
 );
+const autoRestoreEl = /** @type {HTMLInputElement} */ (
+  document.getElementById("auto-restore")
+);
 
 /** @type {Map<string, Pane>} セッション id → ペイン */
 const panes = new Map();
@@ -389,10 +392,29 @@ async function commitFontSize() {
   applyFontSize(result.settings.fontSize);
 }
 
+/**
+ * 自動復元の ON / OFF を保存する。
+ *
+ * 復元されるかどうかを決めるだけで、構成の記録は止めない。記録まで止めると
+ * 有効に戻したときに復元するものが残っていない。
+ */
+async function commitAutoRestore() {
+  const result = await api.setSettings({ autoRestore: autoRestoreEl.checked });
+  if (!result.ok) {
+    showMessage(`設定を保存できません: ${result.error}`, { error: true });
+    // 保存できていない状態を有効に見せない
+    autoRestoreEl.checked = !autoRestoreEl.checked;
+    return;
+  }
+
+  autoRestoreEl.checked = result.settings.autoRestore;
+}
+
 /** 起動時に保存済みの設定を読み込む。 */
 async function loadSettings() {
   const settings = await api.getSettings();
   applyFontSize(settings.fontSize);
+  autoRestoreEl.checked = settings.autoRestore;
 }
 
 async function addSession() {
@@ -454,6 +476,8 @@ broadcastInput.addEventListener("keydown", (event) => {
 waitingOnlyEl.addEventListener("change", updateBroadcastTarget);
 
 fontSizeInput.addEventListener("change", commitFontSize);
+
+autoRestoreEl.addEventListener("change", commitAutoRestore);
 
 const keyButtons = /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll("#keys button")
