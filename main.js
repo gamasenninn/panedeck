@@ -50,7 +50,7 @@ function createWindow() {
     width: 1400,
     height: 900,
     backgroundColor: "#0d1117",
-    title: "ClaudeDeck",
+    title: "PaneDeck",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -151,7 +151,7 @@ ipcMain.handle("log:save", async (_, id) => {
 ipcMain.handle("workspace:save", async (_, name) => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "セッション構成を保存",
-    defaultPath: "claudedeck-workspace.json",
+    defaultPath: "panedeck-workspace.json",
     filters: [{ name: "Workspace", extensions: ["json"] }],
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };

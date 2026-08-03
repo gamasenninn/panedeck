@@ -154,7 +154,7 @@ test.describe("detectStatus - アイドル判定", () => {
   const quiet = { msSinceLastOutput: QUIET_MS + 100, exited: false };
 
   test("PowerShell プロンプトは idle", () => {
-    expect(detectStatus({ ...quiet, tail: "PS C:\\app\\claudedeck>" })).toBe(
+    expect(detectStatus({ ...quiet, tail: "PS C:\\app\\panedeck>" })).toBe(
       STATUS.IDLE
     );
   });

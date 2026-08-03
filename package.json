@@ -1,8 +1,8 @@
 {
-  "name": "claudedeck",
+  "name": "panedeck",
   "version": "0.1.0",
   "main": "main.js",
-  "description": "ClaudeDeck - 複数の Claude Code セッションをグリッドで一括操作するターミナルアプリ",
+  "description": "PaneDeck - 複数のコーディングエージェントのセッションをグリッドで一括操作するターミナルアプリ",
   "license": "ISC",
   "scripts": {
     "start": "electron .",

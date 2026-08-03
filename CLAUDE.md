@@ -1,9 +1,13 @@
-# ClaudeDeck - CLAUDE.md
+# PaneDeck - CLAUDE.md
 
 ## プロジェクト概要
 
-複数の Claude Code セッションをグリッド分割ペインで同時に走らせ、一括操作するための
-Electron ターミナルアプリ。node-pty + xterm.js。
+複数のコーディングエージェント（Claude Code / Codex / Gemini CLI など）のセッションを
+グリッド分割ペインで同時に走らせ、一括操作するための Electron ターミナルアプリ。
+node-pty + xterm.js。
+
+特定のエージェントに依存しない設計にする。起動コマンドは設定値であり、
+状態判定のパターンも差し替え可能な形に保つこと。
 
 主な機能:
 
@@ -60,7 +64,7 @@ npm run rebuild    # node-pty を Electron ABI 向けに再ビルド
 ## プロジェクト構造
 
 ```
-claudedeck/
+panedeck/
 ├── main.js              # メインプロセス（IPC ハンドラ）
 ├── preload.js           # contextBridge で API を Renderer に公開
 ├── index.html           # グリッド UI レイアウト・CSS

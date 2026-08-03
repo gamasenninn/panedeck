@@ -13,7 +13,7 @@ const {
  */
 
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
-const MARKER = "CLAUDEDECK_OK";
+const MARKER = "PANEDECK_OK";
 
 const REAL_SHELL =
   process.platform === "win32"

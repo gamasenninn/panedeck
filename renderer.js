@@ -247,7 +247,7 @@ document.getElementById("close-all").addEventListener("click", async () => {
 });
 
 document.getElementById("save-workspace").addEventListener("click", async () => {
-  const result = await api.saveWorkspace("claudedeck");
+  const result = await api.saveWorkspace("panedeck");
   if (result.ok) {
     showMessage(`構成を保存しました: ${result.filePath}`);
   } else if (result.error) {
