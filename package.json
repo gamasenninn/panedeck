@@ -1,13 +1,14 @@
 {
   "name": "panedeck",
   "version": "0.1.0",
-  "main": "main.js",
+  "main": "dist/main.js",
   "description": "PaneDeck - 複数のコーディングエージェントのセッションをグリッドで一括操作するターミナルアプリ",
   "license": "ISC",
   "scripts": {
-    "start": "electron .",
+    "start": "npm run build && electron .",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npx playwright test",
+    "test": "npm run typecheck && npm run build && npx playwright test",
     "test:unit": "npx playwright test --project=unit",
     "test:e2e": "npx playwright test --project=e2e",
     "test:headed": "npx playwright test --project=e2e --headed",

@@ -6,25 +6,32 @@
  * 出力（状態文字列）が一意に決まるので、Electron も pty も無しでテストできる。
  */
 
-/** @type {Record<string, import("../types/panedeck").SessionStatus>} */
-const STATUS = {
+import type { SessionStatus } from "../types/panedeck";
+
+export const STATUS = {
   RUNNING: "running", // 出力が流れている（処理中）
   WAITING: "waiting", // ユーザーの入力を待っている（要操作）
   IDLE: "idle", // シェルプロンプトなどで待機中（何も走っていない）
   EXITED: "exited", // プロセス終了
-};
+} as const satisfies Record<string, SessionStatus>;
 
 /** この時間だけ出力が止まったら「静止した」とみなす (ms) */
-const QUIET_MS = 400;
+export const QUIET_MS = 400;
 
 /** 状態判定で見る末尾の行数 */
-const TAIL_LINES = 10;
+export const TAIL_LINES = 10;
 
-// CSI (ESC [ ... 英字) と OSC (ESC ] ... BEL)
-const ANSI_PATTERN = /\[[0-9;?]*[a-zA-Z]|\][^]*/g;
+/**
+ * CSI (ESC [ ... 英字) と OSC (ESC ] ...)
+ *
+ * ESC は `\x1b` と書く。生の制御文字を正規表現へ直接埋めると、ソース上で
+ * 目に見えないまま消えうる（実際、移行時に落ちて `[Y/n]` を ANSI と誤って
+ * 削っていた）。
+ */
+const ANSI_PATTERN = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^]*/g;
 
 /** ユーザーの入力を待っていることを示すパターン */
-const WAITING_PATTERNS = [
+export const WAITING_PATTERNS: RegExp[] = [
   /│\s*>/, // Claude Code の入力ボックス
   /❯/, // 選択肢プロンプト
   /\(y\/n\)/i, // 確認プロンプト
@@ -32,28 +39,36 @@ const WAITING_PATTERNS = [
   /press enter/i,
 ];
 
-/**
- * ANSI エスケープシーケンスを除去する。
- * @param {string|null|undefined} text
- * @returns {string}
- */
-function stripAnsi(text) {
+/** ANSI エスケープシーケンスを除去する。 */
+export function stripAnsi(text: string | null | undefined): string {
   if (text === null || text === undefined) return "";
   return String(text).replace(ANSI_PATTERN, "");
 }
 
-/**
- * 末尾の空行を無視して、最後の中身のある行を返す（行末の空白は落とす）。
- * @param {string} text
- * @returns {string}
- */
-function lastNonEmptyLine(text) {
+/** 末尾の空行を無視して、最後の中身のある行を返す（行末の空白は落とす）。 */
+export function lastNonEmptyLine(text: string): string {
   const lines = String(text ?? "").split(/\r?\n/);
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].replace(/\s+$/, "");
     if (line !== "") return line;
   }
   return "";
+}
+
+export interface DetectStatusParams {
+  /** 出力バッファの末尾 */
+  tail?: string;
+  /** 最後の出力からの経過時間 (ms) */
+  msSinceLastOutput: number;
+  /** プロセスが終了したか */
+  exited?: boolean;
+  /** 静止とみなす閾値 (ms) */
+  quietMs?: number;
+  /**
+   * 入力待ちの判定パターン。エージェントごとに差し替えるための注入口。
+   * 未指定なら既定を使う
+   */
+  waitingPatterns?: RegExp[];
 }
 
 /**
@@ -64,23 +79,14 @@ function lastNonEmptyLine(text) {
  *   2. 直近に出力が動いている  → running
  *   3. 入力待ちパターンに一致  → waiting
  *   4. それ以外                → idle
- *
- * @param {object} params
- * @param {string} [params.tail] 出力バッファの末尾
- * @param {number} params.msSinceLastOutput 最後の出力からの経過時間 (ms)
- * @param {boolean} [params.exited] プロセスが終了したか
- * @param {number} [params.quietMs] 静止とみなす閾値 (ms)
- * @param {RegExp[]} [params.waitingPatterns] 入力待ちの判定パターン。
- *   エージェントごとに差し替えるための注入口。未指定なら既定を使う
- * @returns {import("../types/panedeck").SessionStatus}
  */
-function detectStatus({
+export function detectStatus({
   tail,
   msSinceLastOutput,
   exited,
   quietMs = QUIET_MS,
   waitingPatterns,
-}) {
+}: DetectStatusParams): SessionStatus {
   if (exited) return STATUS.EXITED;
   if (msSinceLastOutput < quietMs) return STATUS.RUNNING;
 
@@ -97,13 +103,3 @@ function detectStatus({
 
   return STATUS.IDLE;
 }
-
-module.exports = {
-  STATUS,
-  QUIET_MS,
-  TAIL_LINES,
-  WAITING_PATTERNS,
-  stripAnsi,
-  lastNonEmptyLine,
-  detectStatus,
-};

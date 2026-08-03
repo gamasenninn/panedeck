@@ -29,9 +29,12 @@
   "include": [
     "types/**/*.d.ts",
     "main.js",
+    "main.ts",
     "preload.js",
+    "preload.ts",
     "renderer.js",
-    "lib/**/*.js",
-    "tests/**/*.js"
+    "renderer.ts",
+    "lib/**/*",
+    "tests/**/*"
   ]
 }

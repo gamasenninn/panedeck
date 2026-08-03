@@ -1,0 +1,25 @@
+{
+  "//": [
+    "メインプロセス側（main / preload / lib）のビルド設定。",
+    "出力は dist/ に置き、package.json の main はそこを指す。",
+    "renderer はブラウザ側で読み込み方も出力形式も違うため、",
+    "tsconfig.renderer.json で別に扱う。",
+    "型検査だけを行う tsconfig.json（noEmit）とは役割が別で、",
+    "あちらは renderer とテストを含めて全体を見る。"
+  ],
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": true
+  },
+  "include": [
+    "main.js",
+    "main.ts",
+    "preload.js",
+    "preload.ts",
+    "lib/**/*",
+    "types/**/*.d.ts"
+  ]
+}

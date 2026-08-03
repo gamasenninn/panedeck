@@ -1,12 +1,9 @@
-const { test, expect } = require("@playwright/test");
-const { SessionManager } = require("../../lib/session-manager");
-const { STATUS, QUIET_MS } = require("../../lib/status-detector");
-const {
-  createFakePtyFactory,
-  createFakeClock,
-} = require("./helpers/fake-pty");
+import { test, expect } from "@playwright/test";
+import { SessionManager } from "../../lib/session-manager";
+import { STATUS, QUIET_MS } from "../../lib/status-detector";
+import { createFakePtyFactory, createFakeClock } from "./helpers/fake-pty";
 
-function setup(options = {}) {
+function setup(options: Record<string, unknown> = {}) {
   const ptyFactory = createFakePtyFactory();
   const now = createFakeClock();
   const manager = new SessionManager({ ptyFactory, now, ...options });
@@ -85,7 +82,7 @@ test.describe("get / list", () => {
     const { manager } = setup();
     const session = manager.create({ cwd: "a" });
     // 型の上では存在しない項目。実体に混ざっていないことを見る
-    expect(/** @type {any} */ (session).pty).toBeUndefined();
+    expect((session as any).pty).toBeUndefined();
     expect(() => JSON.stringify(session)).not.toThrow();
   });
 });
@@ -367,7 +364,7 @@ test.describe("並べ替え", () => {
 
   test("引数が配列でなくても落ちない", () => {
     const { manager } = setupThree();
-    expect(() => manager.reorder(/** @type {any} */ ("nope"))).not.toThrow();
+    expect(() => manager.reorder("nope" as any)).not.toThrow();
     expect(titles(manager)).toEqual(["A", "B", "C"]);
   });
 
@@ -546,7 +543,7 @@ test.describe("状態で絞った一斉送信", () => {
 
   test("未知の状態を渡したら誰にも送らない", () => {
     const { manager, ptyFactory } = setupDeck();
-    const bogus = /** @type {any} */ ({ onlyStatus: "nonsense" });
+    const bogus = { onlyStatus: "nonsense" } as any;
     expect(manager.broadcast("x", undefined, bogus)).toBe(0);
     expect(ptyFactory.created.every((p) => p.written.length === 0)).toBe(true);
   });

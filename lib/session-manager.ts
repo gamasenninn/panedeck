@@ -1,11 +1,19 @@
-const { detectStatus, STATUS } = require("./status-detector");
-const { normalizeCommand } = require("./command");
-const { resolveProfile } = require("./agent-profiles");
+import type {
+  CreateSessionOptions,
+  LiveSession,
+  Pty,
+  PtyFactoryOptions,
+  Session,
+  BroadcastOptions,
+} from "../types/panedeck";
+import { detectStatus, STATUS } from "./status-detector";
+import { normalizeCommand } from "./command";
+import { resolveProfile } from "./agent-profiles";
 
-/** @import * as Types from "../types/panedeck" */
+export { STATUS };
 
 /** ログとして保持する最大文字数（超えたら先頭から捨てる） */
-const DEFAULT_MAX_LOG_BYTES = 500000;
+export const DEFAULT_MAX_LOG_BYTES = 500000;
 
 /** 状態判定に渡す末尾の文字数 */
 const TAIL_CHARS = 2000;
@@ -13,11 +21,20 @@ const TAIL_CHARS = 2000;
 /**
  * cwd の末尾セグメントを既定タイトルにする（Windows / POSIX どちらの区切りも扱う）。
  */
-function defaultTitle(cwd) {
+export function defaultTitle(cwd?: string): string {
   const segments = String(cwd ?? "")
     .split(/[\\/]/)
     .filter(Boolean);
   return segments[segments.length - 1] ?? "session";
+}
+
+export interface SessionManagerDeps {
+  /** pty を生成する関数 */
+  ptyFactory: (options: PtyFactoryOptions) => Pty;
+  /** 現在時刻 (ms) */
+  now?: () => number;
+  /** ログ保持量の上限 */
+  maxLogBytes?: number;
 }
 
 /**
@@ -26,34 +43,28 @@ function defaultTitle(cwd) {
  * Electron にも node-pty にも直接依存しない。pty の生成は `ptyFactory` として
  * 注入されるので、テストではフェイクを渡して実プロセス無しに検証できる。
  */
-class SessionManager {
-  /**
-   * @param {object} deps
-   * @param {(options: Types.PtyFactoryOptions) => Types.Pty} deps.ptyFactory
-   *   pty を生成する関数
-   * @param {() => number} [deps.now] 現在時刻 (ms)
-   * @param {number} [deps.maxLogBytes] ログ保持量の上限
-   */
-  constructor({ ptyFactory, now = () => Date.now(), maxLogBytes = DEFAULT_MAX_LOG_BYTES }) {
+export class SessionManager {
+  ptyFactory: (options: PtyFactoryOptions) => Pty;
+  now: () => number;
+  maxLogBytes: number;
+
+  sessions = new Map<string, LiveSession>();
+  nextId = 1;
+
+  dataHandlers: Array<(id: string, data: string) => void> = [];
+  exitHandlers: Array<(id: string, exitCode: number) => void> = [];
+
+  constructor({
+    ptyFactory,
+    now = () => Date.now(),
+    maxLogBytes = DEFAULT_MAX_LOG_BYTES,
+  }: SessionManagerDeps) {
     this.ptyFactory = ptyFactory;
     this.now = now;
     this.maxLogBytes = maxLogBytes;
-
-    /** @type {Map<string, Types.LiveSession>} */
-    this.sessions = new Map();
-    this.nextId = 1;
-
-    /** @type {Array<(id: string, data: string) => void>} */
-    this.dataHandlers = [];
-    /** @type {Array<(id: string, exitCode: number) => void>} */
-    this.exitHandlers = [];
   }
 
-  /**
-   * セッションを生成する。
-   * @param {Types.CreateSessionOptions} [options]
-   * @returns {Types.Session} スナップショット
-   */
+  /** セッションを生成する。 */
   create({
     cwd,
     shell,
@@ -64,14 +75,14 @@ class SessionManager {
     env,
     initialCommand,
     agent,
-  } = {}) {
+  }: CreateSessionOptions = {}): Session {
     const id = `s${this.nextId++}`;
     const pty = this.ptyFactory({ shell, args, cwd, cols, rows, env });
     const command = normalizeCommand(initialCommand);
     // 未知の id はここで既定へ寄せる。以降は必ず実在するプロファイルを指す
     const profile = resolveProfile(agent);
 
-    const session = {
+    const session: LiveSession = {
       id,
       title: title || defaultTitle(cwd),
       cwd,
@@ -107,25 +118,18 @@ class SessionManager {
     return this._snapshot(session);
   }
 
-  /**
-   * @param {string} id
-   * @returns {Types.Session|null}
-   */
-  get(id) {
+  get(id: string): Session | null {
     const session = this.sessions.get(id);
     return session ? this._snapshot(session) : null;
   }
 
-  /** @returns {Types.Session[]} 生成順のスナップショット一覧 */
-  list() {
+  /** 生成順（並べ替え後はその順）のスナップショット一覧 */
+  list(): Session[] {
     return [...this.sessions.values()].map((s) => this._snapshot(s));
   }
 
-  /**
-   * 1 セッションに書き込む。
-   * @returns {boolean} 書き込めたか
-   */
-  write(id, data) {
+  /** 1 セッションに書き込む。 */
+  write(id: string, data: string): boolean {
     const session = this.sessions.get(id);
     if (!session || session.exited) return false;
     session.pty.write(data);
@@ -139,12 +143,10 @@ class SessionManager {
    * 算出するので、レンダラ側が持つ（ポーリング遅れのある）状態ではなく
    * 送信時点の状態で判定される。
    *
-   * @param {string} data
-   * @param {string[]} [ids] 未指定なら全セッション
-   * @param {Types.BroadcastOptions} [options]
-   * @returns {number} 実際に書き込めた数
+   * @param ids 未指定なら全セッション
+   * @returns 実際に書き込めた数
    */
-  broadcast(data, ids, options) {
+  broadcast(data: string, ids?: string[] | null, options?: BroadcastOptions): number {
     const { onlyStatus } = options ?? {};
     const targets = ids ?? [...this.sessions.keys()];
     const filtered = onlyStatus
@@ -164,15 +166,15 @@ class SessionManager {
    *
    * セッションの中身（pty・ログ）はそのまま。並べ替えで再接続は起きない。
    *
-   * @param {string[]} orderedIds 並べたい順の id。
+   * @param orderedIds 並べたい順の id。
    *   含まれない既存セッションは、相対順を保ったまま末尾に残る
-   * @returns {string[]} 並べ替え後の id 一覧
+   * @returns 並べ替え後の id 一覧
    */
-  reorder(orderedIds) {
+  reorder(orderedIds: string[]): string[] {
     const requested = Array.isArray(orderedIds) ? orderedIds : [];
 
-    const ordered = [];
-    const seen = new Set();
+    const ordered: string[] = [];
+    const seen = new Set<string>();
     for (const id of requested) {
       if (seen.has(id) || !this.sessions.has(id)) continue;
       seen.add(id);
@@ -185,15 +187,14 @@ class SessionManager {
       if (!seen.has(id)) ordered.push(id);
     }
 
-    const entries = ordered.map((id) => [id, this.sessions.get(id)]);
+    const entries = ordered.map((id) => [id, this.sessions.get(id)!] as const);
     this.sessions.clear();
     for (const [id, session] of entries) this.sessions.set(id, session);
 
     return ordered;
   }
 
-  /** @returns {boolean} */
-  resize(id, cols, rows) {
+  resize(id: string, cols: number, rows: number): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;
     session.cols = cols;
@@ -202,8 +203,7 @@ class SessionManager {
     return true;
   }
 
-  /** @returns {boolean} */
-  close(id) {
+  close(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;
     session.pty.kill();
@@ -211,39 +211,35 @@ class SessionManager {
     return true;
   }
 
-  /** @returns {number} 閉じた数 */
-  closeAll() {
+  /** @returns 閉じた数 */
+  closeAll(): number {
     const ids = [...this.sessions.keys()];
     return ids.reduce((count, id) => count + (this.close(id) ? 1 : 0), 0);
   }
 
-  /** @returns {string} 蓄積された出力（存在しなければ空文字列） */
-  getLog(id) {
+  /** 蓄積された出力（存在しなければ空文字列） */
+  getLog(id: string): string {
     const session = this.sessions.get(id);
     return session ? session.log : "";
   }
 
   /** 出力受信時に (id, data) で呼ばれるコールバックを登録する */
-  onData(cb) {
+  onData(cb: (id: string, data: string) => void): void {
     this.dataHandlers.push(cb);
   }
 
   /** プロセス終了時に (id, exitCode) で呼ばれるコールバックを登録する */
-  onExit(cb) {
+  onExit(cb: (id: string, exitCode: number) => void): void {
     this.exitHandlers.push(cb);
   }
 
-  _appendLog(log, data) {
+  private _appendLog(log: string, data: string): string {
     const next = log + data;
     return next.length > this.maxLogBytes ? next.slice(-this.maxLogBytes) : next;
   }
 
-  /**
-   * pty 本体を除いた、IPC で送れる形のスナップショットを作る
-   * @param {Types.LiveSession} session
-   * @returns {Types.Session}
-   */
-  _snapshot(session) {
+  /** pty 本体を除いた、IPC で送れる形のスナップショットを作る */
+  private _snapshot(session: LiveSession): Session {
     return {
       id: session.id,
       title: session.title,
@@ -265,5 +261,3 @@ class SessionManager {
     };
   }
 }
-
-module.exports = { SessionManager, STATUS, defaultTitle, DEFAULT_MAX_LOG_BYTES };

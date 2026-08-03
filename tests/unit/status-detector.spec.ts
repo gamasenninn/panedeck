@@ -1,11 +1,11 @@
-const { test, expect } = require("@playwright/test");
-const {
+import { test, expect } from "@playwright/test";
+import {
   detectStatus,
   stripAnsi,
   lastNonEmptyLine,
   STATUS,
   QUIET_MS,
-} = require("../../lib/status-detector");
+} from "../../lib/status-detector";
 
 test.describe("stripAnsi", () => {
   test("色指定のエスケープシーケンスを除去する", () => {
@@ -256,7 +256,7 @@ test.describe("detectStatus - 待機パターンの差し替え", () => {
 
   test("配列でない値を渡しても落ちず既定にフォールバックする", () => {
     // 型では弾かれる値。実行時に流れ込んだ場合の保険を見る
-    const notAnArray = /** @type {any} */ ("not-an-array");
+    const notAnArray = "not-an-array" as any;
     expect(
       detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: notAnArray })
     ).toBe(STATUS.WAITING);

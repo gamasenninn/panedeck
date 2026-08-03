@@ -1,31 +1,31 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
+
+import type { Settings } from "../types/panedeck";
 
 /**
  * アプリ設定の読み書き。
  *
  * Electron に依存しない。保存先のパスは呼び出し側から渡す前提で、
- * `app.getPath("userData")` の解決は main.js の仕事。こうしておくと
+ * `app.getPath("userData")` の解決は main の仕事。こうしておくと
  * テストが実ユーザーの設定ファイルを触らずに済む。
  *
  * ワークスペース（どのディレクトリで開くか）とは別物として扱う。あちらは
  * 「構成を保存」を押したときだけ残るが、こちらは押さなくても次回に残ってほしい。
  */
 
-/** @import * as Types from "../types/panedeck" */
-
-const FONT_SIZE_MIN = 8;
-const FONT_SIZE_MAX = 32;
+export const FONT_SIZE_MIN = 8;
+export const FONT_SIZE_MAX = 32;
 
 /** 列数の上限。これ以上並べても 1 ペインが狭すぎて読めない */
-const COLUMNS_MAX = 6;
+export const COLUMNS_MAX = 6;
 
-/** @type {Types.Settings} */
-const DEFAULT_SETTINGS = {
+export const DEFAULT_SETTINGS: Settings = {
   fontSize: 12,
 
   // 0 は「幅に合わせて自動で折り返す」。改名前からの見た目がこれ
   columns: 0,
+
   // 既定で有効にしても、保存された構成が無ければ何も起きない。
   // つまり初回起動の見え方は変わらない
   autoRestore: true,
@@ -45,13 +45,15 @@ const DEFAULT_SETTINGS = {
  * 範囲外（0 や 999）は端に丸める。数値として解釈できている以上、既定へ戻すより
  * 端へ寄せるほうが入力の意図に近い。逆に "abc" のような解釈できない値を端に
  * 寄せるのは推測になるので、そちらは既定へ戻す。
- *
- * @param {unknown} value
- * @param {number} fallback
- * @returns {number}
  */
-function clampNumber(value, fallback, min, max) {
-  const num = typeof value === "string" || typeof value === "number" ? Number(value) : NaN;
+function clampNumber(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const num =
+    typeof value === "string" || typeof value === "number" ? Number(value) : NaN;
   if (!Number.isFinite(num)) return fallback;
 
   return Math.min(max, Math.max(min, Math.round(num)));
@@ -60,12 +62,8 @@ function clampNumber(value, fallback, min, max) {
 /**
  * 真偽値だけを受け入れる。"yes" や 1 を真とみなすと、書き間違いが
  * 意図した設定として通ってしまう。
- *
- * @param {unknown} value
- * @param {boolean} fallback
- * @returns {boolean}
  */
-function bool(value, fallback) {
+function bool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
@@ -74,12 +72,10 @@ function bool(value, fallback) {
  *
  * 未知のフィールドは持ち込まない。設定ファイルは手で編集されうるので、
  * 読み込んだものをそのまま流さない。
- *
- * @param {unknown} raw
- * @returns {Types.Settings}
  */
-function normalizeSettings(raw) {
-  const source = raw && typeof raw === "object" ? /** @type {any} */ (raw) : {};
+export function normalizeSettings(raw: unknown): Settings {
+  const source: Record<string, unknown> =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 
   return {
     fontSize: clampNumber(
@@ -89,13 +85,13 @@ function normalizeSettings(raw) {
       FONT_SIZE_MAX
     ),
     columns: clampNumber(source.columns, DEFAULT_SETTINGS.columns, 0, COLUMNS_MAX),
-    // 真偽値以外は解釈しない。"yes" や 1 を真とみなすと、書き間違いが
-    // 意図した設定として通ってしまう
     autoRestore: bool(source.autoRestore, DEFAULT_SETTINGS.autoRestore),
     autoLog: bool(source.autoLog, DEFAULT_SETTINGS.autoLog),
     logStripAnsi: bool(source.logStripAnsi, DEFAULT_SETTINGS.logStripAnsi),
     logDir:
-      typeof source.logDir === "string" ? source.logDir.trim() : DEFAULT_SETTINGS.logDir,
+      typeof source.logDir === "string"
+        ? source.logDir.trim()
+        : DEFAULT_SETTINGS.logDir,
   };
 }
 
@@ -104,11 +100,8 @@ function normalizeSettings(raw) {
  *
  * 無い・壊れている・形が違う、のいずれでも例外を投げず既定を返す。
  * 設定ファイル 1 つでアプリが起動できなくなるのを避けるため。
- *
- * @param {string} filePath
- * @returns {Types.Settings}
  */
-function readSettings(filePath) {
+export function readSettings(filePath: string): Settings {
   try {
     return normalizeSettings(JSON.parse(fs.readFileSync(filePath, "utf8")));
   } catch {
@@ -122,11 +115,9 @@ function readSettings(filePath) {
  * 読みと違い、書きの失敗は握り潰さない。保存できていないのに成功したように
  * 見えるほうが困るので、呼び出し側で通知する。
  *
- * @param {string} filePath
- * @param {Partial<Types.Settings>} settings
- * @returns {Types.Settings} 実際に書いた（正規化後の）設定
+ * @returns 実際に書いた（正規化後の）設定
  */
-function writeSettings(filePath, settings) {
+export function writeSettings(filePath: string, settings: Partial<Settings>): Settings {
   const normalized = normalizeSettings(settings);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), "utf8");
@@ -138,22 +129,7 @@ function writeSettings(filePath, settings) {
  *
  * `writeSettings` は渡された形をそのまま正規化するので、片方の項目だけを渡すと
  * もう片方が既定へ戻ってしまう。UI は変更した項目だけを送るため、こちらを使う。
- *
- * @param {string} filePath
- * @param {Partial<Types.Settings>} patch
- * @returns {Types.Settings} 実際に書いた（正規化後の）設定
  */
-function updateSettings(filePath, patch) {
+export function updateSettings(filePath: string, patch: Partial<Settings>): Settings {
   return writeSettings(filePath, { ...readSettings(filePath), ...patch });
 }
-
-module.exports = {
-  DEFAULT_SETTINGS,
-  FONT_SIZE_MIN,
-  FONT_SIZE_MAX,
-  COLUMNS_MAX,
-  normalizeSettings,
-  readSettings,
-  writeSettings,
-  updateSettings,
-};

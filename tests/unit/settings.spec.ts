@@ -1,7 +1,7 @@
-const { test, expect } = require("@playwright/test");
-const fs = require("fs");
-const path = require("path");
-const {
+import { test, expect } from "@playwright/test";
+import fs from "fs";
+import path from "path";
+import {
   DEFAULT_SETTINGS,
   FONT_SIZE_MIN,
   FONT_SIZE_MAX,
@@ -10,7 +10,7 @@ const {
   readSettings,
   writeSettings,
   updateSettings,
-} = require("../../lib/settings");
+} from "../../lib/settings";
 
 const TEMP_DIR = path.join(__dirname, "temp-settings");
 
@@ -226,7 +226,7 @@ test.describe("writeSettings", () => {
   test("正規化してから書く", () => {
     const filePath = path.join(TEMP_DIR, "normalized.json");
     // 未知のフィールドはそもそも型で弾かれる。手で編集されたファイル相当を渡す
-    writeSettings(filePath, /** @type {any} */ ({ fontSize: 999, evil: "x" }));
+    writeSettings(filePath, { fontSize: 999, evil: "x" } as any);
 
     const saved = JSON.parse(fs.readFileSync(filePath, "utf8"));
     expect(saved.fontSize).toBe(FONT_SIZE_MAX);

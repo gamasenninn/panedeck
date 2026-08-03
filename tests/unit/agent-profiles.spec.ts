@@ -1,11 +1,11 @@
-const { test, expect } = require("@playwright/test");
-const {
+import { test, expect } from "@playwright/test";
+import {
   AGENT_PROFILES,
   DEFAULT_AGENT_ID,
   listProfiles,
   resolveProfile,
-} = require("../../lib/agent-profiles");
-const { WAITING_PATTERNS } = require("../../lib/status-detector");
+} from "../../lib/agent-profiles";
+import { WAITING_PATTERNS } from "../../lib/status-detector";
 
 test.describe("プロファイル定義", () => {
   test("既定は Claude Code（現行動作の維持）", () => {

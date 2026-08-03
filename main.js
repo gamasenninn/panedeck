@@ -181,7 +181,8 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile("index.html");
+  // ビルド後は main が dist/ に居るので、アプリのルートから辿る
+  mainWindow.loadFile(path.join(app.getAppPath(), "index.html"));
 }
 
 app.whenReady().then(() => {

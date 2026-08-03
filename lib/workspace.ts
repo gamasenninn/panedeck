@@ -1,9 +1,13 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "fs";
+import path from "path";
 
-const { normalizeCommand } = require("./command");
+import type { Session, Workspace, WorkspaceEntry } from "../types/panedeck";
+import { normalizeCommand } from "./command";
 
-/** @import * as Types from "../types/panedeck" */
+/** ワークスペースファイルの形式バージョン */
+export const WORKSPACE_VERSION = 1;
+
+const DEFAULT_NAME = "workspace";
 
 /**
  * 復元に必要な項目だけを取り出した 1 セッション分のエントリを作る。
@@ -11,14 +15,11 @@ const { normalizeCommand } = require("./command");
  * 起動コマンドは値があるときだけ載せる。項目の有無で「起動コマンドを持たない
  * 既存ファイル」と「明示的に空」を区別しないことで、読み手はどちらも
  * 「未指定」として同じ経路で扱える。
- *
- * @param {Partial<Types.WorkspaceEntry> & {cwd?: string}} source
- * @returns {Types.WorkspaceEntry}
  */
-function toEntry(source) {
-  const entry = {
+function toEntry(source: Partial<WorkspaceEntry>): WorkspaceEntry {
+  const entry: WorkspaceEntry = {
     title: source.title,
-    cwd: source.cwd,
+    cwd: source.cwd!,
     shell: source.shell,
     args: Array.isArray(source.args) ? source.args : [],
   };
@@ -35,21 +36,16 @@ function toEntry(source) {
   return entry;
 }
 
-/** ワークスペースファイルの形式バージョン */
-const WORKSPACE_VERSION = 1;
-
-const DEFAULT_NAME = "workspace";
-
 /**
  * 実行中のセッション一覧を、復元に必要な情報だけの形に落とす。
  *
  * id や status といった実行時の情報は保存しない（次回は別の id で起動するため）。
- *
- * @param {Array<Partial<Types.Session>>} sessions SessionManager.list() のスナップショット
- * @param {{name?: string}} [options]
- * @returns {Types.Workspace}
+ * 並び順は配列の順そのもの。位置を表す項目は持たせない。
  */
-function serializeWorkspace(sessions, { name } = {}) {
+export function serializeWorkspace(
+  sessions: Array<Partial<Session>>,
+  { name }: { name?: string } = {}
+): Workspace {
   return {
     version: WORKSPACE_VERSION,
     name: name || DEFAULT_NAME,
@@ -62,16 +58,14 @@ function serializeWorkspace(sessions, { name } = {}) {
  *
  * 壊れたエントリ（cwd 無し）は捨て、未知のフィールドは持ち込まない。
  *
- * @param {string} text
- * @returns {Types.Workspace}
- * @throws {Error} JSON が壊れている / 形式が違う / バージョンが新しすぎる場合
+ * @throws JSON が壊れている / 形式が違う / バージョンが新しすぎる場合
  */
-function parseWorkspace(text) {
-  let raw;
+export function parseWorkspace(text: string): Workspace {
+  let raw: any;
   try {
     raw = JSON.parse(text);
   } catch (err) {
-    throw new Error(`ワークスペースの JSON を解析できません: ${err.message}`);
+    throw new Error(`ワークスペースの JSON を解析できません: ${(err as Error).message}`);
   }
 
   if (!raw || typeof raw !== "object") {
@@ -92,8 +86,8 @@ function parseWorkspace(text) {
     version: Number(raw.version) || WORKSPACE_VERSION,
     name: raw.name || DEFAULT_NAME,
     sessions: raw.sessions
-      .filter((s) => s && typeof s.cwd === "string" && s.cwd !== "")
-      .map((s) =>
+      .filter((s: any) => s && typeof s.cwd === "string" && s.cwd !== "")
+      .map((s: any) =>
         toEntry({
           ...s,
           // 文字列以外の起動コマンドは持ち込まない（そのまま pty へ流さない）
@@ -104,14 +98,12 @@ function parseWorkspace(text) {
   };
 }
 
-/**
- * ワークスペースをファイルに保存する（親ディレクトリが無ければ作る）。
- * @param {string} filePath
- * @param {Array<Partial<Types.Session>>} sessions
- * @param {{name?: string}} [options]
- * @returns {Types.Workspace}
- */
-function saveWorkspace(filePath, sessions, options = {}) {
+/** ワークスペースをファイルに保存する（親ディレクトリが無ければ作る）。 */
+export function saveWorkspace(
+  filePath: string,
+  sessions: Array<Partial<Session>>,
+  options: { name?: string } = {}
+): Workspace {
   const workspace = serializeWorkspace(sessions, options);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(workspace, null, 2), "utf8");
@@ -120,11 +112,9 @@ function saveWorkspace(filePath, sessions, options = {}) {
 
 /**
  * ワークスペースファイルを読み込む。
- * @param {string} filePath
- * @returns {Types.Workspace}
- * @throws {Error} ファイルが無い / 形式が不正な場合
+ * @throws ファイルが無い / 形式が不正な場合
  */
-function loadWorkspace(filePath) {
+export function loadWorkspace(filePath: string): Workspace {
   return parseWorkspace(fs.readFileSync(filePath, "utf8"));
 }
 
@@ -137,23 +127,11 @@ function loadWorkspace(filePath) {
  *
  * ユーザーが明示的にファイルを選ぶ復元は `loadWorkspace` のまま。あちらは
  * 選んだファイルが読めなかったことを伝える必要がある。
- *
- * @param {string} filePath
- * @returns {Types.Workspace|null}
  */
-function tryLoadWorkspace(filePath) {
+export function tryLoadWorkspace(filePath: string): Workspace | null {
   try {
     return loadWorkspace(filePath);
   } catch {
     return null;
   }
 }
-
-module.exports = {
-  WORKSPACE_VERSION,
-  serializeWorkspace,
-  parseWorkspace,
-  saveWorkspace,
-  tryLoadWorkspace,
-  loadWorkspace,
-};

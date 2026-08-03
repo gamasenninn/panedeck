@@ -1,7 +1,7 @@
-const { test, expect } = require("@playwright/test");
-const fs = require("fs");
-const path = require("path");
-const { LogWriter, logFileName } = require("../../lib/log-writer");
+import { test, expect } from "@playwright/test";
+import fs from "fs";
+import path from "path";
+import { LogWriter, logFileName } from "../../lib/log-writer";
 
 const TEMP_DIR = path.join(__dirname, "temp-logs");
 

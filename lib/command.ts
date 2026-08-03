@@ -10,13 +10,8 @@
  *
  * 「未指定」と「空文字列」を同じ扱いにまとめることで、呼び出し側は真偽値で
  * 分岐するだけで済む（空なら素のシェルのまま）。
- *
- * @param {unknown} value
- * @returns {string|undefined}
  */
-function normalizeCommand(value) {
+export function normalizeCommand(value: unknown): string | undefined {
   const trimmed = String(value ?? "").trim();
   return trimmed === "" ? undefined : trimmed;
 }
-
-module.exports = { normalizeCommand };
