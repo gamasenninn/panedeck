@@ -2,17 +2,48 @@
 // "Identifier 'deck' has already been declared" でスクリプト全体が落ちるため、別名にする
 const api = window.deck;
 
+/** @import * as Types from "./types/panedeck" */
+
+/**
+ * 1 ペイン分の持ち物。
+ *
+ * `status` はメインプロセスから来た最新の状態の写し。送信先の件数表示に使う
+ * （実際の絞り込みはメイン側で行うので、ここは表示専用）。
+ *
+ * @typedef {object} Pane
+ * @property {string} id
+ * @property {HTMLElement} el
+ * @property {InstanceType<typeof Terminal>} term
+ * @property {InstanceType<FitAddonNS["FitAddon"]>} fitAddon
+ * @property {HTMLElement} statusEl
+ * @property {HTMLElement} titleEl
+ * @property {HTMLInputElement} selectEl
+ * @property {Types.SessionStatus} status
+ */
+
+/** @typedef {typeof FitAddon} FitAddonNS */
+
 const grid = document.getElementById("grid");
 const emptyState = document.getElementById("empty-state");
 const sessionCountEl = document.getElementById("session-count");
 const broadcastTargetEl = document.getElementById("broadcast-target");
-const broadcastInput = document.getElementById("broadcast-input");
-const waitingOnlyEl = document.getElementById("waiting-only");
-const launchCommandInput = document.getElementById("launch-command");
-const agentSelectEl = document.getElementById("agent-select");
 const messageEl = document.getElementById("message");
 
-/** @type {Map<string, object>} セッション id → ペイン */
+// 値を読み書きする入力要素は具体的な型まで絞る
+const broadcastInput = /** @type {HTMLInputElement} */ (
+  document.getElementById("broadcast-input")
+);
+const waitingOnlyEl = /** @type {HTMLInputElement} */ (
+  document.getElementById("waiting-only")
+);
+const launchCommandInput = /** @type {HTMLInputElement} */ (
+  document.getElementById("launch-command")
+);
+const agentSelectEl = /** @type {HTMLSelectElement} */ (
+  document.getElementById("agent-select")
+);
+
+/** @type {Map<string, Pane>} セッション id → ペイン */
 const panes = new Map();
 
 /**
@@ -25,8 +56,10 @@ const panes = new Map();
  */
 const creating = new Set();
 
+/** @type {string|null} */
 let focusedId = null;
 
+/** @type {Record<Types.SessionStatus, string>} */
 const STATUS_LABELS = {
   running: "実行中",
   waiting: "入力待ち",
@@ -34,7 +67,10 @@ const STATUS_LABELS = {
   exited: "終了",
 };
 
-/** 「入力待ちのみ」で絞るときの状態 */
+/**
+ * 「入力待ちのみ」で絞るときの状態
+ * @type {Types.SessionStatus}
+ */
 const WAITING = "waiting";
 
 /**
@@ -59,6 +95,10 @@ const KEY_SEQUENCES = {
 
 // ---------------------------------------------------------------- ペイン生成
 
+/**
+ * @param {Types.Session} session
+ * @returns {Promise<Pane>}
+ */
 async function createPane(session) {
   const el = document.createElement("div");
   el.className = "pane";
@@ -77,12 +117,14 @@ async function createPane(session) {
     <div class="pane-body"></div>
   `;
 
-  const titleEl = el.querySelector(".pane-title");
-  const cwdEl = el.querySelector(".pane-cwd");
-  const commandEl = el.querySelector(".pane-command");
-  const statusEl = el.querySelector(".pane-status");
-  const selectEl = el.querySelector(".pane-select");
-  const body = el.querySelector(".pane-body");
+  const titleEl = /** @type {HTMLElement} */ (el.querySelector(".pane-title"));
+  const cwdEl = /** @type {HTMLElement} */ (el.querySelector(".pane-cwd"));
+  const commandEl = /** @type {HTMLElement} */ (el.querySelector(".pane-command"));
+  const statusEl = /** @type {HTMLElement} */ (el.querySelector(".pane-status"));
+  const selectEl = /** @type {HTMLInputElement} */ (
+    el.querySelector(".pane-select")
+  );
+  const body = /** @type {HTMLElement} */ (el.querySelector(".pane-body"));
 
   titleEl.textContent = session.title;
   cwdEl.textContent = session.cwd || "";
@@ -109,6 +151,7 @@ async function createPane(session) {
   term.open(body);
   if (backlog) term.write(backlog);
 
+  /** @type {Pane} */
   const pane = {
     id: session.id,
     el,
@@ -145,6 +188,7 @@ async function createPane(session) {
   return pane;
 }
 
+/** @param {string} id */
 function removePane(id) {
   const pane = panes.get(id);
   if (!pane) return;
@@ -154,6 +198,7 @@ function removePane(id) {
   if (focusedId === id) focusedId = null;
 }
 
+/** @param {Pane} pane */
 function fit(pane) {
   try {
     pane.fitAddon.fit();
@@ -163,6 +208,7 @@ function fit(pane) {
   }
 }
 
+/** @param {string} id */
 function setFocused(id) {
   focusedId = id;
   panes.forEach((pane, paneId) => {
@@ -345,7 +391,10 @@ broadcastInput.addEventListener("keydown", (event) => {
 
 waitingOnlyEl.addEventListener("change", updateBroadcastTarget);
 
-document.querySelectorAll("#keys button").forEach((button) => {
+const keyButtons = /** @type {NodeListOf<HTMLElement>} */ (
+  document.querySelectorAll("#keys button")
+);
+keyButtons.forEach((button) => {
   button.addEventListener("click", () => sendKey(button.dataset.key));
 });
 

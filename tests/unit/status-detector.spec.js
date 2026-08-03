@@ -54,7 +54,6 @@ test.describe("detectStatus - 終了判定", () => {
       tail: "PS C:\\app>",
       msSinceLastOutput: 9999,
       exited: true,
-      exitCode: 0,
     });
     expect(status).toBe(STATUS.EXITED);
   });
@@ -64,7 +63,6 @@ test.describe("detectStatus - 終了判定", () => {
       tail: "building...",
       msSinceLastOutput: 0,
       exited: true,
-      exitCode: 1,
     });
     expect(status).toBe(STATUS.EXITED);
   });
@@ -257,8 +255,10 @@ test.describe("detectStatus - 待機パターンの差し替え", () => {
   });
 
   test("配列でない値を渡しても落ちず既定にフォールバックする", () => {
+    // 型では弾かれる値。実行時に流れ込んだ場合の保険を見る
+    const notAnArray = /** @type {any} */ ("not-an-array");
     expect(
-      detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: "not-an-array" })
+      detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: notAnArray })
     ).toBe(STATUS.WAITING);
     expect(detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: null })).toBe(
       STATUS.WAITING

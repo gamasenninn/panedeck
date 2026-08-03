@@ -54,12 +54,35 @@ node-pty + xterm.js。
 
 ```bash
 npm start          # アプリ起動
-npm test           # 全テスト（unit + e2e）
+npm test           # 型検査 + 全テスト（unit + e2e）
+npm run typecheck  # 型検査のみ（tsc --noEmit）
 npm run test:unit  # ロジック単体テストのみ（高速）
 npm run test:e2e   # Electron E2E テストのみ
 npm run test:report  # HTML レポート表示
 npm run rebuild    # node-pty を Electron ABI 向けに再ビルド
 ```
+
+## 型検査（JS のまま TypeScript で検査する）
+
+`tsconfig.json` は `allowJs` + `checkJs` + `noEmit`。**JS は 1 バイトも生成しない。**
+ファイル名も実行時の挙動も変えずに型検査だけを受ける構成で、`npm test` の先頭で走る。
+
+狙いは main ↔ preload ↔ renderer の境界。IPC は実行時の検査が無く、チャンネル名や
+ペイロードの形が食い違っても `undefined` が静かに流れるだけなので、そこを型で押さえる。
+
+- 受け渡しの形は `types/panedeck.d.ts` に1つだけ置く。`Session` に項目を足すときは
+  ここを直せば、main / preload / renderer / workspace のどこで漏らしても検査で落ちる
+- `types/globals.d.ts` は `window.deck`、xterm のグローバル、E2E が仕込む
+  `global.__sessionManager` などの宣言
+- JSDoc から型を参照するときは `/** @import * as Types from "../types/panedeck" */`
+- `strict` / `noImplicitAny` / `strictNullChecks` は意図的に緩めてある。JSDoc 主体の
+  コードでいきなり全部を厳格にすると、実害のある指摘が暗黙 any の山に埋もれるため
+- テストが**わざと不正な値を渡す**箇所（`onlyStatus: "nonsense"` など）は
+  `/** @type {any} */ (...)` で明示的に外す。「意図的な不正入力」だと読めるようにする
+
+**完全な `.ts` 化は #6（パッケージング）と同時に行う方針。** electron-builder を入れる
+時点でビルド工程が必要になるので、工程の導入を 2 回に分けない。それまでの穴はこの
+型検査で埋める。
 
 ## プロジェクト構造
 

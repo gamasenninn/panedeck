@@ -19,12 +19,16 @@ test.afterAll(() => {
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
 });
 
+/** @type {Array<Partial<import("../../types/panedeck").Session>>} */
 const SESSIONS = [
   { id: "s1", title: "repo-a", cwd: "C:\\app\\repo-a", shell: "pwsh", args: ["-NoLogo"], status: "waiting" },
   { id: "s2", title: "repo-b", cwd: "C:\\app\\repo-b", shell: "pwsh", args: [], status: "running" },
 ];
 
-/** エージェントを混ぜたデッキ（#1: セッションごとの起動コマンド） */
+/**
+ * エージェントを混ぜたデッキ（#1: セッションごとの起動コマンド）
+ * @type {Array<Partial<import("../../types/panedeck").Session>>}
+ */
 const MIXED_SESSIONS = [
   { id: "s1", title: "repo-a", cwd: "C:\\app\\repo-a", initialCommand: "claude" },
   { id: "s2", title: "repo-b", cwd: "C:\\app\\repo-b", initialCommand: "codex --resume" },
@@ -48,8 +52,10 @@ test.describe("serializeWorkspace", () => {
 
   test("実行時の情報 (id / status) は落とす", () => {
     const ws = serializeWorkspace(SESSIONS);
-    expect(ws.sessions[0].id).toBeUndefined();
-    expect(ws.sessions[0].status).toBeUndefined();
+    // 保存形には無い項目。混ざっていないことを見るので型からは外して覗く
+    const entry = /** @type {any} */ (ws.sessions[0]);
+    expect(entry.id).toBeUndefined();
+    expect(entry.status).toBeUndefined();
   });
 
   test("空の一覧も扱える", () => {
@@ -117,7 +123,8 @@ test.describe("parseWorkspace", () => {
       version: WORKSPACE_VERSION,
       sessions: [{ cwd: "C:\\ok", evil: "rm -rf" }],
     });
-    expect(parseWorkspace(text).sessions[0].evil).toBeUndefined();
+    const entry = /** @type {any} */ (parseWorkspace(text).sessions[0]);
+    expect(entry.evil).toBeUndefined();
   });
 
   test("JSON として壊れていたら例外を投げる", () => {

@@ -6,7 +6,8 @@
   "license": "ISC",
   "scripts": {
     "start": "electron .",
-    "test": "npx playwright test",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npx playwright test",
     "test:unit": "npx playwright test --project=unit",
     "test:e2e": "npx playwright test --project=e2e",
     "test:headed": "npx playwright test --project=e2e --headed",
@@ -16,7 +17,9 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
     "@playwright/test": "^1.58.2",
-    "electron": "^40.6.1"
+    "@types/node": "^26.1.2",
+    "electron": "^40.6.1",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

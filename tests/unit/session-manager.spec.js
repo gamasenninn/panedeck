@@ -84,7 +84,8 @@ test.describe("get / list", () => {
   test("スナップショットに pty 本体を含めない（IPC で送れる形にする）", () => {
     const { manager } = setup();
     const session = manager.create({ cwd: "a" });
-    expect(session.pty).toBeUndefined();
+    // 型の上では存在しない項目。実体に混ざっていないことを見る
+    expect(/** @type {any} */ (session).pty).toBeUndefined();
     expect(() => JSON.stringify(session)).not.toThrow();
   });
 });
@@ -462,7 +463,8 @@ test.describe("状態で絞った一斉送信", () => {
 
   test("未知の状態を渡したら誰にも送らない", () => {
     const { manager, ptyFactory } = setupDeck();
-    expect(manager.broadcast("x", undefined, { onlyStatus: "nonsense" })).toBe(0);
+    const bogus = /** @type {any} */ ({ onlyStatus: "nonsense" });
+    expect(manager.broadcast("x", undefined, bogus)).toBe(0);
     expect(ptyFactory.created.every((p) => p.written.length === 0)).toBe(true);
   });
 
