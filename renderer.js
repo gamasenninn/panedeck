@@ -13,6 +13,16 @@ const messageEl = document.getElementById("message");
 /** @type {Map<string, object>} セッション id → ペイン */
 const panes = new Map();
 
+/**
+ * @type {Set<string>} createPane が進行中のセッション id
+ *
+ * createPane は panes へ登録する前に log:get を await するため、その間に
+ * 同期ポーリングが再入すると「まだ panes に無い」と判定して同じセッションの
+ * ペインを二重に作る。先に作られた DOM は panes から参照されなくなり、
+ * 状態も出力も届かず × でも閉じられない幽霊ペインとして残る。
+ */
+const creating = new Set();
+
 let focusedId = null;
 
 const STATUS_LABELS = {
@@ -160,7 +170,13 @@ async function sync() {
   for (const session of sessions) {
     const pane = panes.get(session.id);
     if (!pane) {
-      await createPane(session);
+      if (creating.has(session.id)) continue;
+      creating.add(session.id);
+      try {
+        await createPane(session);
+      } finally {
+        creating.delete(session.id);
+      }
     } else {
       pane.titleEl.textContent = session.title;
       pane.statusEl.textContent = STATUS_LABELS[session.status] ?? session.status;
