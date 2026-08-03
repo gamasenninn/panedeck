@@ -15,6 +15,7 @@ import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace"
 import { listProfiles } from "./lib/agent-profiles";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
+import { cleanupLogs } from "./lib/log-retention";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -51,6 +52,44 @@ function logDir(): string {
   );
 }
 
+/**
+ * 片付けの根拠になる索引。ログの出力先と同じ場所に置く。
+ *
+ * 出力先を変えると索引も別になる。前の出力先のログは片付かなくなるが、
+ * 「消せない」方向に倒れるので実害は小さい。
+ */
+function logIndexPath(): string {
+  return path.join(logDir(), ".panedeck-logs.json");
+}
+
+/**
+ * 溜まったログを片付ける。
+ *
+ * 起動時に一度だけ。書き込みのたびに走査するのは重すぎる。
+ * 索引に載っている＝PaneDeck が作ったファイルだけが対象で、出力先に置かれた
+ * 他のファイルには触れない。
+ */
+function cleanupOldLogs(): void {
+  const settings = readSettings(settingsPath());
+
+  const result = cleanupLogs({
+    indexPath: logIndexPath(),
+    policy: {
+      maxAgeDays: settings.logRetentionDays,
+      maxTotalBytes: settings.logMaxTotalMB * 1024 * 1024,
+    },
+  });
+
+  // 消せなかったものは次回また試すので、ここでは知らせない。
+  // 起動のたびに通知が出るほうが煩わしい
+  if (result.failed.length > 0) {
+    console.warn(
+      `古いログを ${result.failed.length} 件片付けられませんでした`,
+      result.failed
+    );
+  }
+}
+
 /** ログの自動保存。無効なときは null。 */
 let logWriter: LogWriter | null = null;
 
@@ -82,7 +121,11 @@ function applyLogSettings(): void {
   // 出力先や ANSI の扱いが変わることもあるので、有効化のたびに作り直す。
   // 既に開いているセッションは新しいファイルへ続きを書く
   if (logWriter) logWriter.closeAll();
-  logWriter = new LogWriter({ dir: logDir(), stripAnsi: settings.logStripAnsi });
+  logWriter = new LogWriter({
+    dir: logDir(),
+    stripAnsi: settings.logStripAnsi,
+    indexPath: logIndexPath(),
+  });
 
   for (const session of sessionManager.list()) {
     logWriter.open(session.id, session.title);
@@ -191,6 +234,8 @@ app.whenReady().then(() => {
   // ウィンドウより先に復元する。レンダラは一覧をポーリングして追従し、
   // それまでの出力は各セッションのログに溜まって初回描画時に流し込まれる
   restoreLastSession();
+  // 新しいログを開く前に片付ける（今から書くものを対象にしない）
+  cleanupOldLogs();
   applyLogSettings();
   createWindow();
 

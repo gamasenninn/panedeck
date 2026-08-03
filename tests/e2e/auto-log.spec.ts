@@ -32,8 +32,15 @@ async function relaunchWith(settings) {
   await launchWith(settings);
 }
 
+/**
+ * 出力先にあるログファイル。
+ *
+ * 片付け用の索引（.panedeck-logs.json）はログではないので数えない。
+ */
 function logFiles(dir = LOG_DIR) {
-  return fs.existsSync(dir) ? fs.readdirSync(dir).sort() : [];
+  return fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((n) => n.endsWith(".log")).sort()
+    : [];
 }
 
 function readLog(name, dir = LOG_DIR) {
@@ -164,6 +171,85 @@ test.describe("無効なとき", () => {
     await expect
       .poll(() => JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8")).autoLog)
       .toBe(true);
+  });
+});
+
+test.describe("古いログの片付け", () => {
+  const indexPath = () => path.join(LOG_DIR, ".panedeck-logs.json");
+
+  /** 古いログを 1 件、索引に載せた状態で置く */
+  function givenOldLog(name: string, ageDays: number) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    const filePath = path.join(LOG_DIR, name);
+    fs.writeFileSync(filePath, "old output", "utf8");
+
+    const index = fs.existsSync(indexPath())
+      ? JSON.parse(fs.readFileSync(indexPath(), "utf8"))
+      : [];
+    index.push({ file: filePath, createdAt: Date.now() - ageDays * 86400000 });
+    fs.writeFileSync(indexPath(), JSON.stringify(index), "utf8");
+
+    return filePath;
+  }
+
+  test("起動時に保持期間を過ぎたログが消える", async () => {
+    fs.rmSync(LOG_DIR, { recursive: true, force: true });
+    const old = givenOldLog("old-20260101-000000.log", 90);
+    const fresh = givenOldLog("fresh-20260803-000000.log", 1);
+
+    await relaunchWith({ autoLog: true, logDir: LOG_DIR, logRetentionDays: 30 });
+
+    expect(fs.existsSync(old)).toBe(false);
+    expect(fs.existsSync(fresh)).toBe(true);
+  });
+
+  test("索引に無いファイルは消さない", async () => {
+    // 出力先にユーザーが置いた別のファイルを巻き込まないこと
+    fs.rmSync(LOG_DIR, { recursive: true, force: true });
+    givenOldLog("mine-20260101-000000.log", 90);
+
+    // PaneDeck が作ったものと同じ形の名前だが、索引には無い
+    const lookalike = path.join(LOG_DIR, "theirs-20200101-000000.log");
+    fs.writeFileSync(lookalike, "user's own", "utf8");
+    const unrelated = path.join(LOG_DIR, "notes.txt");
+    fs.writeFileSync(unrelated, "important", "utf8");
+
+    await relaunchWith({ autoLog: true, logDir: LOG_DIR, logRetentionDays: 30 });
+
+    expect(fs.existsSync(lookalike)).toBe(true);
+    expect(fs.existsSync(unrelated)).toBe(true);
+  });
+
+  test("保持期間 0 なら片付けない", async () => {
+    fs.rmSync(LOG_DIR, { recursive: true, force: true });
+    const ancient = givenOldLog("ancient-20200101-000000.log", 3650);
+
+    await relaunchWith({
+      autoLog: true,
+      logDir: LOG_DIR,
+      logRetentionDays: 0,
+      logMaxTotalMB: 0,
+    });
+
+    expect(fs.existsSync(ancient)).toBe(true);
+  });
+
+  test("新しく作ったログは索引に載る", async () => {
+    fs.rmSync(LOG_DIR, { recursive: true, force: true });
+    await relaunchWith({ autoLog: true, logDir: LOG_DIR });
+
+    await resetSessions(electronApp, page);
+    await createSession(page, { cwd: "C:\\app\\repo-a", title: "indexed" });
+    await waitForPaneCount(page, 1);
+    await emitPtyData(electronApp, 0, "output");
+
+    await expect
+      .poll(() =>
+        fs.existsSync(indexPath())
+          ? JSON.parse(fs.readFileSync(indexPath(), "utf8")).length
+          : 0
+      )
+      .toBe(1);
   });
 });
 

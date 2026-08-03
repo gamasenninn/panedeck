@@ -71,8 +71,51 @@ test.describe("normalizeSettings", () => {
       "columns",
       "fontSize",
       "logDir",
+      "logMaxTotalMB",
+      "logRetentionDays",
       "logStripAnsi",
     ]);
+  });
+});
+
+test.describe("normalizeSettings - ログの保持", () => {
+  test("既定は 30 日 / 500MB", () => {
+    expect(DEFAULT_SETTINGS.logRetentionDays).toBe(30);
+    expect(DEFAULT_SETTINGS.logMaxTotalMB).toBe(500);
+  });
+
+  test("0 は無制限として通す（片付けの無効化）", () => {
+    expect(normalizeSettings({ logRetentionDays: 0 }).logRetentionDays).toBe(0);
+    expect(normalizeSettings({ logMaxTotalMB: 0 }).logMaxTotalMB).toBe(0);
+  });
+
+  test("負の値は 0（無制限）に丸める", () => {
+    expect(normalizeSettings({ logRetentionDays: -5 }).logRetentionDays).toBe(0);
+    expect(normalizeSettings({ logMaxTotalMB: -1 }).logMaxTotalMB).toBe(0);
+  });
+
+  test("数値として読めない値は既定にする", () => {
+    for (const bogus of ["abc", null, {}, []]) {
+      expect(normalizeSettings({ logRetentionDays: bogus }).logRetentionDays).toBe(
+        DEFAULT_SETTINGS.logRetentionDays
+      );
+      expect(normalizeSettings({ logMaxTotalMB: bogus }).logMaxTotalMB).toBe(
+        DEFAULT_SETTINGS.logMaxTotalMB
+      );
+    }
+  });
+});
+
+test.describe("normalizeSettings - autoLog の既定", () => {
+  test("片付けが入ったので既定で有効にする", () => {
+    // #4 で無効にしていたのは「際限なく溜まる」ため。#11 で上限が入り、
+    // その理由が消えた。既存の設定ファイルには autoLog が明示的に書かれて
+    // いるので、既定の変更が影響するのは新規インストールだけ
+    expect(DEFAULT_SETTINGS.autoLog).toBe(true);
+  });
+
+  test("明示的に無効にできる", () => {
+    expect(normalizeSettings({ autoLog: false }).autoLog).toBe(false);
   });
 });
 
@@ -105,20 +148,16 @@ test.describe("normalizeSettings - 列数", () => {
 });
 
 test.describe("normalizeSettings - ログの自動保存", () => {
-  test("既定は無効", () => {
-    // 保持期間の上限がまだ無く、放っておくと際限なく溜まる。
-    // ディスクへ黙って書き続けるより、明示的に選ばせる
-    expect(DEFAULT_SETTINGS.autoLog).toBe(false);
-    expect(normalizeSettings({}).autoLog).toBe(false);
-  });
-
   test("真偽値はそのまま通す", () => {
     expect(normalizeSettings({ autoLog: true }).autoLog).toBe(true);
+    expect(normalizeSettings({ autoLog: false }).autoLog).toBe(false);
   });
 
   test("真偽値でない値は既定にする", () => {
     for (const bogus of ["yes", 1, null, {}]) {
-      expect(normalizeSettings({ autoLog: bogus }).autoLog).toBe(false);
+      expect(normalizeSettings({ autoLog: bogus }).autoLog).toBe(
+        DEFAULT_SETTINGS.autoLog
+      );
     }
   });
 

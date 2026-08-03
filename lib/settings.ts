@@ -30,13 +30,19 @@ export const DEFAULT_SETTINGS: Settings = {
   // つまり初回起動の見え方は変わらない
   autoRestore: true,
 
-  // ログの自動保存は既定で無効。保持期間・上限の仕組みがまだ無く、
-  // 有効なままだと際限なく溜まる。ディスクへ黙って書き続けるより選ばせる
-  autoLog: false,
+  // ログの自動保存は既定で有効。以前は「際限なく溜まる」ため無効にしていたが、
+  // 保持期間と合計サイズの上限が入ったのでその理由は消えた。
+  // 既存の設定ファイルには値が明示的に書かれているため、この既定が効くのは
+  // 新規インストールだけ
+  autoLog: true,
   // 出力先。空なら呼び出し側が既定の場所（userData 配下）を決める
   logDir: "",
   // 後から読むためのログなので、既定では ANSI エスケープを落とす
   logStripAnsi: true,
+  // 保持期間（日）。0 なら期間では消さない
+  logRetentionDays: 30,
+  // 合計サイズの上限 (MB)。0 ならサイズでは消さない
+  logMaxTotalMB: 500,
 };
 
 /**
@@ -92,6 +98,19 @@ export function normalizeSettings(raw: unknown): Settings {
       typeof source.logDir === "string"
         ? source.logDir.trim()
         : DEFAULT_SETTINGS.logDir,
+    // 上限は 0 が「無制限」。負の値は 0 に寄せる（消しすぎる方向へ倒さない）
+    logRetentionDays: clampNumber(
+      source.logRetentionDays,
+      DEFAULT_SETTINGS.logRetentionDays,
+      0,
+      Number.MAX_SAFE_INTEGER
+    ),
+    logMaxTotalMB: clampNumber(
+      source.logMaxTotalMB,
+      DEFAULT_SETTINGS.logMaxTotalMB,
+      0,
+      Number.MAX_SAFE_INTEGER
+    ),
   };
 }
 

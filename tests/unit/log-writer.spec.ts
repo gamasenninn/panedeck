@@ -49,6 +49,50 @@ test.describe("logFileName", () => {
   });
 });
 
+test.describe("索引への記録", () => {
+  const indexPath = () => path.join(TEMP_DIR, ".panedeck-logs.json");
+
+  test("作ったファイルを索引に載せる", () => {
+    // 片付け（lib/log-retention）は索引に載っているものしか消さない。
+    // ここで記録しないと、そのログは永久に片付かない
+    const writer = new LogWriter({
+      dir: TEMP_DIR,
+      now: () => FIXED_TIME,
+      indexPath: indexPath(),
+    });
+    const filePath = writer.open("s1", "repo-a");
+
+    const index = JSON.parse(fs.readFileSync(indexPath(), "utf8"));
+    expect(index).toHaveLength(1);
+    expect(index[0].file).toBe(filePath);
+    expect(index[0].createdAt).toBe(FIXED_TIME);
+  });
+
+  test("indexPath を渡さなければ記録しない", () => {
+    const writer = setup();
+    writer.open("s1", "repo-a");
+
+    expect(fs.existsSync(indexPath())).toBe(false);
+  });
+
+  test("記録に失敗しても書き出しは続く", () => {
+    const blocked = path.join(TEMP_DIR, "blocked");
+    fs.writeFileSync(blocked, "not a dir", "utf8");
+
+    const writer = new LogWriter({
+      dir: TEMP_DIR,
+      now: () => FIXED_TIME,
+      indexPath: path.join(blocked, "index.json"),
+    });
+
+    const filePath = writer.open("s1", "repo-a");
+    writer.append("s1", "still written");
+    expect(writer.flush()).toEqual([]);
+
+    expect(fs.readFileSync(filePath, "utf8")).toBe("still written");
+  });
+});
+
 test.describe("open", () => {
   test("セッションごとのファイルパスを返す", () => {
     const writer = setup();

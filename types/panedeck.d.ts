@@ -130,6 +130,10 @@ export interface Settings {
   logDir: string;
   /** ログから ANSI エスケープを落とすか */
   logStripAnsi: boolean;
+  /** ログの保持日数。0 なら期間では消さない */
+  logRetentionDays: number;
+  /** ログの合計サイズ上限 (MB)。0 ならサイズでは消さない */
+  logMaxTotalMB: number;
 }
 
 /** 一斉送信の絞り込み */

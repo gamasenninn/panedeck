@@ -141,6 +141,7 @@ panedeck/
 │   ├── command.js           # 起動コマンドの正規化
 │   ├── settings.js          # アプリ設定の読み書き（保存先パスは注入）
 │   ├── log-writer.js        # 出力のバッファリングとファイル追記
+│   ├── log-retention.js     # 古いログの片付け（索引で自作分だけを対象に）
 │   └── workspace.js         # セッション構成の保存・復元
 ├── types/
 │   ├── panedeck.d.ts        # 層をまたぐ受け渡しの形（Session / DeckApi など）

@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 
 import { stripAnsi as stripAnsiText } from "./status-detector";
+import { addToIndex } from "./log-retention";
 
 /**
  * セッションの出力をファイルへ書き出す。
@@ -65,12 +66,20 @@ export interface LogWriterDeps {
   now?: () => number;
   /** ANSI エスケープを除去して書くか */
   stripAnsi?: boolean;
+  /**
+   * 作ったファイルを記録する索引の場所。
+   *
+   * 片付け（lib/log-retention）は索引に載っているものしか消さない。
+   * 渡さなければ記録しない＝そのログは片付けの対象にならない。
+   */
+  indexPath?: string;
 }
 
 export class LogWriter {
   dir: string;
   now: () => number;
   stripAnsi: boolean;
+  indexPath?: string;
 
   /** セッション id → 出力先パス */
   paths = new Map<string, string>();
@@ -79,10 +88,16 @@ export class LogWriter {
   /** 書き込みに失敗して諦めたセッション */
   failed = new Set<string>();
 
-  constructor({ dir, now = () => Date.now(), stripAnsi = true }: LogWriterDeps) {
+  constructor({
+    dir,
+    now = () => Date.now(),
+    stripAnsi = true,
+    indexPath,
+  }: LogWriterDeps) {
     this.dir = dir;
     this.now = now;
     this.stripAnsi = stripAnsi;
+    this.indexPath = indexPath;
   }
 
   /**
@@ -92,10 +107,17 @@ export class LogWriter {
    * 散らかるのを避ける。
    */
   open(id: string, title: string): string {
-    const filePath = this._uniquePath(logFileName(title, this.now()));
+    const startedAt = this.now();
+    const filePath = this._uniquePath(logFileName(title, startedAt));
+
     this.paths.set(id, filePath);
     this.buffers.set(id, "");
     this.failed.delete(id);
+
+    // 片付けの根拠になる記録。失敗しても投げない（記録が残らないぶんは
+    // 片付けの対象外になるだけで、書き出しは続けられる）
+    if (this.indexPath) addToIndex(this.indexPath, filePath, startedAt);
+
     return filePath;
   }
 
