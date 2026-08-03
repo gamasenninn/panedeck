@@ -1,8 +1,20 @@
 ﻿import { _electron as electron } from "@playwright/test";
 import type { ElectronApplication, Page } from "@playwright/test";
+import fs from "fs";
+import os from "os";
 import path from "path";
 
 const APP_PATH = path.resolve(__dirname, "..", "..", "..");
+
+/**
+ * 起動ごとに用意した一時ディレクトリ。closeApp で消す。
+ *
+ * 設定パスを渡さないテストが実ユーザーの userData を読み書きしてしまうのを
+ * 防ぐため、渡されなかったときはここに逃がす。放っておくと、テストが
+ * ユーザーの設定（自動保存の ON/OFF など）に従って動き、ユーザーの
+ * フォルダへテスト用のログを書き散らす。
+ */
+const disposableDirs = new Map<ElectronApplication, string>();
 
 /**
  * Electron アプリを起動し、アプリと最初のウィンドウを返す。
@@ -16,12 +28,22 @@ export async function launchApp({ settingsPath }: { settingsPath?: string } = {}
   electronApp: ElectronApplication;
   page: Page;
 }> {
+  // 渡されなければ捨ててよい場所を用意する。実ユーザーの userData は使わない
+  const disposable = settingsPath
+    ? null
+    : fs.mkdtempSync(path.join(os.tmpdir(), "panedeck-e2e-"));
+  const resolved = settingsPath ?? path.join(disposable!, "settings.json");
+
   const electronApp = await electron.launch({
     args: [APP_PATH],
-    env: (settingsPath
-      ? { ...process.env, PANEDECK_SETTINGS_PATH: settingsPath }
-      : process.env) as Record<string, string>,
+    env: {
+      ...process.env,
+      PANEDECK_SETTINGS_PATH: resolved,
+    } as Record<string, string>,
   });
+
+  if (disposable) disposableDirs.set(electronApp, disposable);
+
   const page = await electronApp.firstWindow();
   await page.waitForLoadState("domcontentloaded");
   return { electronApp, page };
@@ -32,6 +54,12 @@ export async function launchApp({ settingsPath }: { settingsPath?: string } = {}
  */
 export async function closeApp(electronApp: ElectronApplication) {
   await electronApp.close();
+
+  const disposable = disposableDirs.get(electronApp);
+  if (disposable) {
+    fs.rmSync(disposable, { recursive: true, force: true });
+    disposableDirs.delete(electronApp);
+  }
 }
 
 /**
