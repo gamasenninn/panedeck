@@ -22,7 +22,12 @@ export const QUIET_MS = 400;
 export const TAIL_LINES = 10;
 
 /**
- * CSI (ESC [ ... 英字) と OSC (ESC ] ... BEL または ESC \)
+ * CSI (ESC [ ... 終端) と OSC (ESC ] ... BEL または ESC \)
+ *
+ * CSI は仕様どおり「パラメータ (0x30-0x3F) → 中間バイト (0x20-0x2F) → 終端
+ * (0x40-0x7E)」で書く。以前はパラメータを数字と `?` だけ、終端を英字だけと
+ * していて、カーソル形状の指定 `ESC [ 0 SP q` のように中間バイトを挟むものを
+ * 取り切れず、本文に残っていた（実機の codex が出していた）。
  *
  * **OSC は必ず終端まででとどめる。** 以前は `\x1b\][^]*` と書いていて、
  * OSC 以降を末尾まで全部消していた。シェルは起動のたびにタイトルを設定する
@@ -39,7 +44,7 @@ export const TAIL_LINES = 10;
  * 削っていた）。
  */
 const ANSI_PATTERN =
-  /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b\\/g;
+  /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b\\/g;
 
 /** ユーザーの入力を待っていることを示すパターン */
 export const WAITING_PATTERNS: RegExp[] = [

@@ -29,6 +29,17 @@ test.describe("stripAnsi", () => {
     expect(stripAnsi(undefined)).toBe("");
   });
 
+  test("中間バイトを含む CSI も除去する", () => {
+    // カーソル形状の指定 ESC [ 0 SP q。実機の codex が出していて、
+    // 英字だけを終端とみなす書き方では取り切れずに本文へ残っていた
+    expect(stripAnsi("C:\\app\\panedeck\x1b[0 q")).toBe("C:\\app\\panedeck");
+  });
+
+  test("私用パラメータを含む CSI も除去する", () => {
+    expect(stripAnsi("\x1b[?25lhidden\x1b[?25h")).toBe("hidden");
+    expect(stripAnsi("\x1b[>4;2mx")).toBe("x");
+  });
+
   test("OSC（タイトル設定）を消しても、その後ろは残す", () => {
     // PowerShell は起動のたびにタイトルを設定する。OSC の終端を見ずに
     // 「以降すべて」を消すと、そこから後の出力が判定から丸ごと消える
