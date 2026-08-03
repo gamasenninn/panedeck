@@ -24,6 +24,13 @@ const SESSIONS = [
   { id: "s2", title: "repo-b", cwd: "C:\\app\\repo-b", shell: "pwsh", args: [], status: "running" },
 ];
 
+/** エージェントを混ぜたデッキ（#1: セッションごとの起動コマンド） */
+const MIXED_SESSIONS = [
+  { id: "s1", title: "repo-a", cwd: "C:\\app\\repo-a", initialCommand: "claude" },
+  { id: "s2", title: "repo-b", cwd: "C:\\app\\repo-b", initialCommand: "codex --resume" },
+  { id: "s3", title: "repo-c", cwd: "C:\\app\\repo-c" },
+];
+
 test.describe("serializeWorkspace", () => {
   test("バージョンと名前を含める", () => {
     const ws = serializeWorkspace(SESSIONS, { name: "朝の巡回" });
@@ -51,6 +58,31 @@ test.describe("serializeWorkspace", () => {
 
   test("name 未指定なら既定名を入れる", () => {
     expect(serializeWorkspace([]).name).toBeTruthy();
+  });
+
+  test("セッションごとの起動コマンドを保存する", () => {
+    const ws = serializeWorkspace(MIXED_SESSIONS);
+    expect(ws.sessions.map((s) => s.initialCommand)).toEqual([
+      "claude",
+      "codex --resume",
+      undefined,
+    ]);
+  });
+
+  test("起動コマンドが空なら項目自体を出さない", () => {
+    // 項目の有無で「旧ファイル」と「明示的に空」を区別しないため、
+    // 空はそもそも書かない。読み手はどちらも「未指定」として扱える。
+    const ws = serializeWorkspace([
+      { cwd: "C:\\ok", initialCommand: "" },
+      { cwd: "C:\\ok2", initialCommand: "   " },
+    ]);
+    expect(Object.keys(ws.sessions[0])).not.toContain("initialCommand");
+    expect(Object.keys(ws.sessions[1])).not.toContain("initialCommand");
+  });
+
+  test("起動コマンドの前後の空白は落として保存する", () => {
+    const ws = serializeWorkspace([{ cwd: "C:\\ok", initialCommand: "  claude  " }]);
+    expect(ws.sessions[0].initialCommand).toBe("claude");
   });
 });
 
@@ -102,6 +134,42 @@ test.describe("parseWorkspace", () => {
     const text = JSON.stringify({ version: WORKSPACE_VERSION + 1, sessions: [] });
     expect(() => parseWorkspace(text)).toThrow(/バージョン/);
   });
+
+  test("セッションごとの起動コマンドを読み戻す", () => {
+    const text = JSON.stringify(serializeWorkspace(MIXED_SESSIONS));
+    expect(parseWorkspace(text).sessions.map((s) => s.initialCommand)).toEqual([
+      "claude",
+      "codex --resume",
+      undefined,
+    ]);
+  });
+
+  test("起動コマンドの無い既存ファイルも読める（後方互換）", () => {
+    const text = JSON.stringify({
+      version: WORKSPACE_VERSION,
+      sessions: [{ title: "repo-a", cwd: "C:\\app\\repo-a", shell: "pwsh", args: [] }],
+    });
+    const ws = parseWorkspace(text);
+    expect(ws.sessions).toHaveLength(1);
+    expect(ws.sessions[0].initialCommand).toBeUndefined();
+  });
+
+  test("起動コマンドが文字列でなければ捨てる", () => {
+    const text = JSON.stringify({
+      version: WORKSPACE_VERSION,
+      sessions: [
+        { cwd: "C:\\a", initialCommand: 42 },
+        { cwd: "C:\\b", initialCommand: ["claude"] },
+        { cwd: "C:\\c", initialCommand: "" },
+      ],
+    });
+    const ws = parseWorkspace(text);
+    expect(ws.sessions.map((s) => s.initialCommand)).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
 });
 
 test.describe("saveWorkspace / loadWorkspace", () => {
@@ -139,5 +207,17 @@ test.describe("saveWorkspace / loadWorkspace", () => {
     const filePath = path.join(TEMP_DIR, "empty.json");
     saveWorkspace(filePath, []);
     expect(loadWorkspace(filePath).sessions).toEqual([]);
+  });
+
+  test("セッションごとに異なる起動コマンドが往復する", () => {
+    const filePath = path.join(TEMP_DIR, "mixed.json");
+    saveWorkspace(filePath, MIXED_SESSIONS, { name: "混成デッキ" });
+
+    const ws = loadWorkspace(filePath);
+    expect(ws.sessions.map((s) => [s.cwd, s.initialCommand])).toEqual([
+      ["C:\\app\\repo-a", "claude"],
+      ["C:\\app\\repo-b", "codex --resume"],
+      ["C:\\app\\repo-c", undefined],
+    ]);
   });
 });

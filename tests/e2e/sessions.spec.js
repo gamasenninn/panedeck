@@ -138,3 +138,65 @@ test("ディレクトリ選択をキャンセルしたらセッションは増�
 
   expect(await listSessions(electronApp)).toHaveLength(0);
 });
+
+test.describe("セッションごとの起動コマンド", () => {
+  test("セッションごとに異なるコマンドで起動できる", async () => {
+    await resetSessions(electronApp, page);
+    await createSession(page, { cwd: "C:\\app\\repo-a", initialCommand: "claude" });
+    await createSession(page, { cwd: "C:\\app\\repo-b", initialCommand: "codex --resume" });
+    await createSession(page, { cwd: "C:\\app\\repo-c", initialCommand: "" });
+    await waitForPaneCount(page, 3);
+
+    expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
+    expect(await writtenTo(electronApp, 1)).toEqual(["codex --resume\r"]);
+    expect(await writtenTo(electronApp, 2)).toEqual([]);
+  });
+
+  test("ツールバーの値を変えれば追加ごとに違うコマンドを使える", async () => {
+    await resetSessions(electronApp, page);
+    const toolbar = page.locator("[data-testid=launch-command]");
+
+    await mockOpenDialog(electronApp, ["C:\\app\\repo-claude"]);
+    await toolbar.fill("claude");
+    await page.locator("[data-testid=add-session]").click();
+    await waitForPaneCount(page, 1);
+
+    await mockOpenDialog(electronApp, ["C:\\app\\repo-codex"]);
+    await toolbar.fill("codex");
+    await page.locator("[data-testid=add-session]").click();
+    await waitForPaneCount(page, 2);
+
+    expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
+    expect(await writtenTo(electronApp, 1)).toEqual(["codex\r"]);
+
+    // 後続のテストのために既定値へ戻す
+    await toolbar.fill("claude");
+  });
+
+  test("ペインヘッダに起動コマンドが出る", async () => {
+    await resetSessions(electronApp, page);
+    await createSession(page, { cwd: "C:\\app\\repo-a", initialCommand: "codex --resume" });
+    await waitForPaneCount(page, 1);
+
+    await expect(page.locator("[data-testid=pane-command]")).toHaveText(
+      "codex --resume"
+    );
+  });
+
+  test("起動コマンドが無いペインのヘッダは空", async () => {
+    await resetSessions(electronApp, page);
+    await createSession(page, { cwd: "C:\\app\\repo-a" });
+    await waitForPaneCount(page, 1);
+
+    await expect(page.locator("[data-testid=pane-command]")).toHaveText("");
+  });
+
+  test("セッション一覧にも起動コマンドが載る", async () => {
+    await resetSessions(electronApp, page);
+    await createSession(page, { cwd: "C:\\app\\repo-a", initialCommand: "  gemini  " });
+    await waitForPaneCount(page, 1);
+
+    const sessions = await listSessions(electronApp);
+    expect(sessions[0].initialCommand).toBe("gemini");
+  });
+});

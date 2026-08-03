@@ -64,6 +64,7 @@ async function createPane(session) {
       <input type="checkbox" class="pane-select" data-testid="pane-select" />
       <span class="pane-title" data-testid="pane-title"></span>
       <span class="pane-cwd" data-testid="pane-cwd"></span>
+      <span class="pane-command" data-testid="pane-command"></span>
       <span class="pane-status" data-testid="pane-status"></span>
       <button class="pane-savelog" data-testid="pane-savelog">ログ</button>
       <button class="pane-close danger" data-testid="pane-close">×</button>
@@ -73,6 +74,7 @@ async function createPane(session) {
 
   const titleEl = el.querySelector(".pane-title");
   const cwdEl = el.querySelector(".pane-cwd");
+  const commandEl = el.querySelector(".pane-command");
   const statusEl = el.querySelector(".pane-status");
   const selectEl = el.querySelector(".pane-select");
   const body = el.querySelector(".pane-body");
@@ -80,6 +82,10 @@ async function createPane(session) {
   titleEl.textContent = session.title;
   cwdEl.textContent = session.cwd || "";
   cwdEl.title = session.cwd || "";
+
+  // どのペインがどのエージェントを走らせているか一目で分かるようにする
+  commandEl.textContent = session.initialCommand || "";
+  commandEl.title = session.initialCommand || "";
 
   const term = new Terminal({
     cursorBlink: true,

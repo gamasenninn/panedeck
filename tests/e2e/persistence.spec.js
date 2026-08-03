@@ -172,3 +172,58 @@ test.describe("ワークスペースの保存と復元", () => {
     expect(fs.existsSync(canceledPath)).toBe(false);
   });
 });
+
+test.describe("セッションごとの起動コマンドの往復", () => {
+  // 既存の往復テストが使う workspace.json とは別ファイルにする
+  const mixedPath = () => path.join(TEMP_DIR, "mixed-workspace.json");
+
+  test("エージェントを混ぜた構成を保存できる", async () => {
+    await resetSessions(electronApp, page);
+    await createSession(page, { cwd: "C:\\app\\repo-a", initialCommand: "claude" });
+    await createSession(page, {
+      cwd: "C:\\app\\repo-b",
+      initialCommand: "codex --resume",
+    });
+    await createSession(page, { cwd: "C:\\app\\repo-c" });
+    await waitForPaneCount(page, 3);
+
+    await mockSaveDialog(electronApp, mixedPath());
+    await page.locator("[data-testid=save-workspace]").click();
+
+    await expect.poll(() => fs.existsSync(mixedPath())).toBe(true);
+    const saved = JSON.parse(fs.readFileSync(mixedPath(), "utf8"));
+    expect(saved.sessions.map((s) => s.initialCommand)).toEqual([
+      "claude",
+      "codex --resume",
+      undefined,
+    ]);
+  });
+
+  test("復元ではセッションごとの値がツールバーより優先される", async () => {
+    await resetSessions(electronApp, page);
+    // ツールバーは claude のまま。保存済みの値が勝つことを見る
+    await expect(page.locator("[data-testid=launch-command]")).toHaveValue("claude");
+
+    await mockOpenDialog(electronApp, [mixedPath()]);
+    await page.locator("[data-testid=restore-workspace]").click();
+    await waitForPaneCount(page, 3);
+
+    expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
+    expect(await writtenTo(electronApp, 1)).toEqual(["codex --resume\r"]);
+    // 値を持たないセッションはツールバーの値で補う（現行動作の維持）
+    expect(await writtenTo(electronApp, 2)).toEqual(["claude\r"]);
+  });
+
+  test("復元したペインのヘッダにも起動コマンドが出る", async () => {
+    await resetSessions(electronApp, page);
+    await mockOpenDialog(electronApp, [mixedPath()]);
+    await page.locator("[data-testid=restore-workspace]").click();
+    await waitForPaneCount(page, 3);
+
+    await expect(page.locator("[data-testid=pane-command]")).toHaveText([
+      "claude",
+      "codex --resume",
+      "claude",
+    ]);
+  });
+});

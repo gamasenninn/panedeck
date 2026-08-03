@@ -83,12 +83,10 @@ ipcMain.handle("session:create", (_, options = {}) => {
       title: options.title,
       cols: options.cols,
       rows: options.rows,
+      // 起動直後に流し込むコマンド（例: "claude"）。SessionManager が保持し、
+      // 起動時の書き込みも担うので、ここでは渡すだけでよい
+      initialCommand: options.initialCommand,
     });
-
-    // 起動直後に流し込むコマンド（例: "claude"）
-    if (options.initialCommand) {
-      sessionManager.write(session.id, `${options.initialCommand}\r`);
-    }
 
     return { ok: true, session };
   } catch (err) {
@@ -176,13 +174,14 @@ ipcMain.handle("workspace:restore", async (_, options = {}) => {
 
   try {
     const workspace = loadWorkspace(result.filePaths[0]);
-    const created = workspace.sessions.map((entry) => {
-      const session = sessionManager.create(entry);
-      if (options.initialCommand) {
-        sessionManager.write(session.id, `${options.initialCommand}\r`);
-      }
-      return session;
-    });
+    const created = workspace.sessions.map((entry) =>
+      sessionManager.create({
+        ...entry,
+        // セッションごとの値を優先し、持たないものはツールバーの値で補う。
+        // 起動コマンドを持たない既存のワークスペースでも今までどおり動く
+        initialCommand: entry.initialCommand || options.initialCommand,
+      })
+    );
     return { ok: true, name: workspace.name, sessions: created };
   } catch (err) {
     return { ok: false, error: err.message };

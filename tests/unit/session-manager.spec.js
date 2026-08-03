@@ -316,3 +316,65 @@ test.describe("状態の算出", () => {
     expect(manager.list()[0].status).toBe(STATUS.WAITING);
   });
 });
+
+test.describe("起動コマンド (initialCommand)", () => {
+  test("起動直後に pty へ改行付きで書き込む", () => {
+    const { manager, ptyFactory } = setup();
+    manager.create({ cwd: "a", initialCommand: "claude" });
+
+    expect(ptyFactory.last().written).toEqual(["claude\r"]);
+  });
+
+  test("未指定なら何も書き込まない", () => {
+    const { manager, ptyFactory } = setup();
+    manager.create({ cwd: "a" });
+
+    expect(ptyFactory.last().written).toEqual([]);
+  });
+
+  test("空文字列なら何も書き込まない（素のシェルのまま）", () => {
+    const { manager, ptyFactory } = setup();
+    manager.create({ cwd: "a", initialCommand: "" });
+
+    expect(ptyFactory.last().written).toEqual([]);
+  });
+
+  test("スナップショットに含まれる", () => {
+    const { manager } = setup();
+    const session = manager.create({ cwd: "a", initialCommand: "codex" });
+
+    expect(session.initialCommand).toBe("codex");
+    expect(manager.get(session.id).initialCommand).toBe("codex");
+  });
+
+  test("セッションごとに独立した値を持つ", () => {
+    const { manager, ptyFactory } = setup();
+    manager.create({ cwd: "a", initialCommand: "claude" });
+    manager.create({ cwd: "b", initialCommand: "codex --resume" });
+    manager.create({ cwd: "c" });
+
+    expect(ptyFactory.created[0].written).toEqual(["claude\r"]);
+    expect(ptyFactory.created[1].written).toEqual(["codex --resume\r"]);
+    expect(ptyFactory.created[2].written).toEqual([]);
+
+    expect(manager.list().map((s) => s.initialCommand)).toEqual([
+      "claude",
+      "codex --resume",
+      undefined,
+    ]);
+  });
+
+  test("前後の空白は落とす", () => {
+    const { manager, ptyFactory } = setup();
+    manager.create({ cwd: "a", initialCommand: "  claude  " });
+
+    expect(ptyFactory.last().written).toEqual(["claude\r"]);
+  });
+
+  test("空白だけなら何も書き込まない", () => {
+    const { manager, ptyFactory } = setup();
+    manager.create({ cwd: "a", initialCommand: "   " });
+
+    expect(ptyFactory.last().written).toEqual([]);
+  });
+});
