@@ -22,13 +22,19 @@ export const QUIET_MS = 400;
 export const TAIL_LINES = 10;
 
 /**
- * CSI (ESC [ ... 英字) と OSC (ESC ] ...)
+ * CSI (ESC [ ... 英字) と OSC (ESC ] ... BEL または ESC \)
+ *
+ * **OSC は必ず終端まででとどめる。** 以前は `\x1b\][^]*` と書いていて、
+ * OSC 以降を末尾まで全部消していた。シェルは起動のたびにタイトルを設定する
+ * （PowerShell も出す）ので、判定が見る末尾に OSC が 1 つでもあると、そこから
+ * 後ろが丸ごと消えて「出力が空」になり、入力待ちを検出できなくなっていた。
+ * 実際に codex のログでは 4405 文字が 46 文字まで削られていた。
  *
  * ESC は `\x1b` と書く。生の制御文字を正規表現へ直接埋めると、ソース上で
  * 目に見えないまま消えうる（実際、移行時に落ちて `[Y/n]` を ANSI と誤って
  * 削っていた）。
  */
-const ANSI_PATTERN = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^]*/g;
+const ANSI_PATTERN = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g;
 
 /** ユーザーの入力を待っていることを示すパターン */
 export const WAITING_PATTERNS: RegExp[] = [
@@ -94,8 +100,15 @@ export function detectStatus({
   // 配列でない値だけ既定へ落とす
   const patterns = Array.isArray(waitingPatterns) ? waitingPatterns : WAITING_PATTERNS;
 
+  // 空行は数に入れない。全画面 TUI は画面下を空行で埋めるので、そのまま
+  // 行数で切ると中身が窓の外へ押し出される（codex のログでは 91 行のうち
+  // 中身は 59 行目までで、末尾 10 行はすべて空行だった）
   const clean = stripAnsi(tail);
-  const recent = clean.split(/\r?\n/).slice(-TAIL_LINES).join("\n");
+  const recent = clean
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "")
+    .slice(-TAIL_LINES)
+    .join("\n");
 
   if (patterns.some((pattern) => pattern.test(recent))) {
     return STATUS.WAITING;

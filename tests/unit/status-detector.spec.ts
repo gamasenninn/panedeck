@@ -28,6 +28,32 @@ test.describe("stripAnsi", () => {
     expect(stripAnsi(null)).toBe("");
     expect(stripAnsi(undefined)).toBe("");
   });
+
+  test("OSC（タイトル設定）を消しても、その後ろは残す", () => {
+    // PowerShell は起動のたびにタイトルを設定する。OSC の終端を見ずに
+    // 「以降すべて」を消すと、そこから後の出力が判定から丸ごと消える
+    const tail = "\x1b]0;C:\\Windows\\powershell.exe\x07プロンプトが続く";
+    expect(stripAnsi(tail)).toBe("プロンプトが続く");
+  });
+
+  test("ST (ESC \\) 終端の OSC も扱える", () => {
+    expect(stripAnsi("\x1b]0;title\x1b\\after")).toBe("after");
+  });
+
+  test("OSC が複数あっても後続を失わない", () => {
+    const tail = "\x1b]0;a\x07one\x1b]0;b\x07two\x1b]0;c\x07three";
+    expect(stripAnsi(tail)).toBe("onetwothree");
+  });
+
+  test("OSC と CSI が混ざっていても後続を残す", () => {
+    const tail = "\x1b]0;title\x07\x1b[31m│ > \x1b[0m";
+    expect(stripAnsi(tail)).toBe("│ > ");
+  });
+
+  test("終端の無い OSC は次のエスケープまでで止める", () => {
+    // ログの途中で切れている場合。後続を全部捨てるよりは被害が小さい
+    expect(stripAnsi("\x1b]0;broken\x1b[31mred")).toBe("red");
+  });
 });
 
 test.describe("lastNonEmptyLine", () => {
@@ -211,6 +237,50 @@ test.describe("detectStatus - 優先順位", () => {
       exited: false,
     });
     expect(status).toBe(STATUS.IDLE);
+  });
+});
+
+test.describe("detectStatus - 末尾の空行", () => {
+  const quiet = { msSinceLastOutput: QUIET_MS + 100, exited: false };
+
+  test("末尾に空行が続いても、その手前の入力待ちを見落とさない", () => {
+    // 全画面 TUI は画面下を空行で埋める。行数で窓を切ると、中身が窓の外へ
+    // 押し出される。実際に codex のログでは 91 行中 59 行目までしか中身が
+    // 無く、末尾 10 行はすべて空行だった
+    const tail = ["  Press enter to continue", ...Array(30).fill("")].join("\n");
+    expect(detectStatus({ ...quiet, tail })).toBe(STATUS.WAITING);
+  });
+
+  test("空行を除いた直近 10 行より前のパターンは無視する", () => {
+    // 窓の広さ自体は変えない。数え方を「中身のある行」にするだけ
+    const tail = [
+      "│ > ",
+      ...Array.from({ length: 12 }, (_, i) => `line ${i}`),
+      "",
+      "",
+    ].join("\n");
+    expect(detectStatus({ ...quiet, tail })).toBe(STATUS.IDLE);
+  });
+
+  test("空行しか無ければ idle", () => {
+    expect(detectStatus({ ...quiet, tail: "\n\n\n\n" })).toBe(STATUS.IDLE);
+  });
+});
+
+test.describe("detectStatus - OSC を挟んだ出力", () => {
+  const quiet = { msSinceLastOutput: QUIET_MS + 100, exited: false };
+
+  test("タイトル設定の後に入力ボックスが来ても waiting と判定する", () => {
+    // 実際に codex を走らせて採取した形。シェルがタイトルを設定してから
+    // エージェントの UI が描かれるため、OSC の扱いを誤ると判定できない
+    const tail = [
+      "\x1b]0;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\x07",
+      "╭────────╮",
+      "│ >      │",
+      "╰────────╯",
+    ].join("\n");
+
+    expect(detectStatus({ ...quiet, tail })).toBe(STATUS.WAITING);
   });
 });
 

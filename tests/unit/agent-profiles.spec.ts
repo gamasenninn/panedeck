@@ -35,6 +35,25 @@ test.describe("プロファイル定義", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  test("行頭の選択マーカー › を拾う（codex の選択肢で使われる）", () => {
+    // 実機の codex は ❯ ではなく › を使っていた。行頭に限るのは、
+    // 文章中の › を選択肢と誤認しないため
+    const menu = ["› 1. Update now", "  2. Skip"].join("\n");
+
+    for (const profile of AGENT_PROFILES) {
+      if (profile.id === "claude") continue;
+      expect(profile.waitingPatterns.some((p) => p.test(menu))).toBe(true);
+    }
+  });
+
+  test("文章の途中の › は選択肢とみなさない", () => {
+    const prose = "設定は File › Preferences から開ける";
+
+    for (const profile of AGENT_PROFILES) {
+      expect(profile.waitingPatterns.some((p) => p.test(prose))).toBe(false);
+    }
+  });
+
   test("確認プロンプトはどのプロファイルでも入力待ちになる", () => {
     // エージェントを問わず出る形。ここを取りこぼすと主機能が働かない
     for (const profile of AGENT_PROFILES) {

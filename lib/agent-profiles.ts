@@ -19,6 +19,10 @@ import { WAITING_PATTERNS } from "./status-detector";
  */
 export const COMMON_WAITING_PATTERNS: RegExp[] = [
   /❯/, // 選択肢プロンプト
+  // 行頭の › も選択マーカー。実機の codex は ❯ ではなくこちらを使っていた。
+  // 行頭に限るのは、文章中の › （File › Preferences のような表記）を
+  // 選択肢と誤認しないため
+  /^\s*›/m,
   /\(y\/n\)/i, // 確認プロンプト
   /\[y\/n\]/i,
   /press enter/i,
