@@ -50,6 +50,20 @@ test.describe("stripAnsi", () => {
     expect(stripAnsi(tail)).toBe("│ > ");
   });
 
+  test("単独の ST (ESC \\) も取り除く", () => {
+    // OSC-8 のハイパーリンクは ESC] ... ESC\ リンク文字 ESC] ... ESC\ の形。
+    // 実機のログでは ST が残って URL 行に紛れていた
+    expect(stripAnsi("\x1b]8;;http://x\x1b\\見える文字\x1b]8;;\x1b\\")).toBe(
+      "見える文字"
+    );
+  });
+
+  test("開始が切れて宙に浮いた ST も取り除く", () => {
+    // 判定は末尾 2000 文字だけを見るので、その境界が OSC の途中に落ちると
+    // 開始（ESC ]）が窓の外に出て、終端だけが残る
+    expect(stripAnsi("latest\x1b\\リンク文字")).toBe("latestリンク文字");
+  });
+
   test("終端の無い OSC は次のエスケープまでで止める", () => {
     // ログの途中で切れている場合。後続を全部捨てるよりは被害が小さい
     expect(stripAnsi("\x1b]0;broken\x1b[31mred")).toBe("red");

@@ -1,61 +1,74 @@
-﻿/**
+/**
  * 保存したセッションログを、状態判定と同じ手順で覗く調査用スクリプト。
  *
- *   node scripts/inspect-log.mjs logs/codex.log
+ *   npm run build
+ *   node scripts/inspect-log.mjs logs/codex.log [agent]
  *
- * detectStatus が実際に見るのは「末尾 TAIL_CHARS を stripAnsi にかけ、
- * その最後の TAIL_LINES 行」なので、同じ加工をしてから中身を出す。
- * 目で見た画面ではなく、判定が受け取る文字列に対してパターンを起こすため。
+ * **判定のロジックは再実装せず、ビルド済みの本体を呼ぶ。**
+ * 一度ここに写した結果、本体だけ直してスクリプトが古いまま食い違い、
+ * 「直したのに直っていない」ように見えた。
  */
 
 import fs from "fs";
 import path from "path";
+import { createRequire } from "module";
 
+const require = createRequire(import.meta.url);
+const { stripAnsi, detectStatus, TAIL_LINES } = require("../dist/lib/status-detector.js");
+const { AGENT_PROFILES, resolveProfile } = require("../dist/lib/agent-profiles.js");
+
+/** SessionManager が判定へ渡す末尾の文字数 */
 const TAIL_CHARS = 2000;
-const TAIL_LINES = 10;
-
-const ANSI_PATTERN = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?/g;
-
-const WAITING_PATTERNS = [
-  [String.raw`│\s*>`, /│\s*>/],
-  [String.raw`❯`, /❯/],
-  [String.raw`\(y/n\)`, /\(y\/n\)/i],
-  [String.raw`\[y/n\]`, /\[y\/n\]/i],
-  [String.raw`press enter`, /press enter/i],
-];
 
 const file = process.argv[2];
 if (!file) {
-  console.error("使い方: node scripts/inspect-log.mjs <ログファイル>");
+  console.error("使い方: node scripts/inspect-log.mjs <ログファイル> [エージェント id]");
   process.exit(1);
 }
 
 const raw = fs.readFileSync(path.resolve(file), "utf8");
-const clean = String(raw).replace(ANSI_PATTERN, "");
-const recent = clean.slice(-TAIL_CHARS).split(/\r?\n/).slice(-TAIL_LINES);
+const tail = raw.slice(-TAIL_CHARS);
 
-console.log(`--- ${file} (${raw.length} chars) ---`);
-console.log("=== 判定が見る末尾 10 行（ANSI 除去後・制御文字を可視化）===");
-recent.forEach((line, i) => {
-  const visible = line
+// detectStatus と同じ加工（空行は数に入れない）
+const lines = stripAnsi(tail)
+  .split(/\r?\n/)
+  .filter((line) => line.trim() !== "")
+  .slice(-TAIL_LINES);
+
+const visible = (line) =>
+  line
     .replace(/\r/g, "\\r")
     .replace(/\x1b/g, "\\x1b")
-    .replace(/[\x00-\x08\x0b-\x1f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`);
-  console.log(`${String(i).padStart(2)}| ${visible}`);
-});
+    .replace(/[\x00-\x08\x0b-\x1f]/g, (c) =>
+      `\\x${c.charCodeAt(0).toString(16).padStart(2, "0")}`
+    );
 
-console.log("=== 既定パターンの一致 ===");
-const joined = recent.join("\n");
-for (const [label, pattern] of WAITING_PATTERNS) {
-  console.log(`  ${pattern.test(joined) ? "MATCH  " : "no     "} ${label}`);
+console.log(`--- ${file} (${raw.length} chars, 判定は末尾 ${TAIL_CHARS}) ---`);
+console.log(`=== 判定が見る行（ANSI 除去・空行を除いた末尾 ${TAIL_LINES} 行）===`);
+lines.forEach((line, i) => console.log(`${String(i).padStart(2)}| ${visible(line)}`));
+
+console.log("=== プロファイルごとの判定 ===");
+for (const profile of AGENT_PROFILES) {
+  const status = detectStatus({
+    tail,
+    msSinceLastOutput: 9999,
+    exited: false,
+    waitingPatterns: profile.waitingPatterns,
+  });
+  const hit = profile.waitingPatterns.filter((p) => p.test(lines.join("\n")));
+  console.log(
+    `  ${profile.id.padEnd(8)} ${status.padEnd(8)} ${hit.map(String).join(" ") || "(一致なし)"}`
+  );
 }
 
-console.log("=== 末尾行に出てくる記号（コードポイント）===");
-const last = recent.filter((l) => l.trim() !== "").pop() ?? "";
+console.log("=== 判定行に出てくる ASCII 外の記号 ===");
 const seen = new Map();
-for (const ch of last) {
+for (const ch of lines.join("")) {
   if (ch.charCodeAt(0) > 0x7f) seen.set(ch, (seen.get(ch) ?? 0) + 1);
 }
+if (seen.size === 0) console.log("  (なし)");
 for (const [ch, count] of seen) {
-  console.log(`  ${JSON.stringify(ch)} U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")} x${count}`);
+  console.log(
+    `  ${JSON.stringify(ch)} U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")} x${count}`
+  );
 }
