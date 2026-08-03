@@ -1,0 +1,61 @@
+# electron-builder の設定。
+#
+# アイコンは build/icon.png（1024x1024）1 枚だけ置けばよく、
+# .ico / .icns は electron-builder が各 OS 向けに生成する。
+# PNG は build/icon.svg から scripts/make-icon.mjs で作る。
+
+appId: com.gamasenninn.panedeck
+productName: PaneDeck
+copyright: Copyright © gamasenninn
+
+directories:
+  output: release
+  buildResources: build
+
+# 同梱するもの。tests / 設定ファイル / ソースの .ts は入れない。
+# index.html が node_modules/@xterm/... を直接読むため、production 依存は
+# そのまま同梱される（devDependencies は electron-builder が自動で外す）。
+files:
+  - dist/**/*
+  - index.html
+  - package.json
+
+# node-pty はネイティブモジュールで、conpty の補助実行ファイルも同梱している。
+# asar の中の実行ファイルは起動できないため展開しておく。
+# これを外すと「パッケージ版だけ pty が動かない」になる。
+asarUnpack:
+  - "**/node_modules/node-pty/**"
+
+# ネイティブモジュールをソースから作り直さない。
+#
+# node-pty は N-API のプリビルド（node_modules/node-pty/prebuilds/）を同梱していて、
+# N-API は Node と Electron の間で ABI が安定しているため再ビルドが要らない。
+# 実際、開発時も E2E の実 pty テストもこのプリビルドで動いている。
+#
+# 逆に再ビルドを走らせると、winpty の GetCommitHash.bat が無くて node-gyp が失敗する。
+npmRebuild: false
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+
+linux:
+  icon: build/icon.png
+  category: Development
+  target:
+    - AppImage

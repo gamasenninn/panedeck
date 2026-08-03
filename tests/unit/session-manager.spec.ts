@@ -178,6 +178,19 @@ test.describe("resize", () => {
     const { manager } = setup();
     expect(manager.resize("nope", 80, 24)).toBe(false);
   });
+
+  test("終了済みセッションはリサイズしない", () => {
+    // node-pty は終了済みの pty をリサイズすると例外を投げる。
+    // レンダラは文字サイズ変更・列数変更・ウィンドウリサイズのたびに
+    // 全ペインへ resize を投げるので、終了したペインが 1 つでも残っていると
+    // メインプロセスで未処理例外になる（write と同じく状態を見る必要がある）
+    const { manager, ptyFactory } = setup();
+    const a = manager.create({ cwd: "a" });
+    ptyFactory.last()!.emitExit(0);
+
+    expect(manager.resize(a.id, 120, 50)).toBe(false);
+    expect(ptyFactory.last()!.resized).toEqual([]);
+  });
 });
 
 test.describe("close", () => {

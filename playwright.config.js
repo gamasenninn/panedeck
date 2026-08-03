@@ -12,5 +12,7 @@ module.exports = defineConfig({
   projects: [
     { name: "unit", testDir: "./tests/unit" },
     { name: "e2e", testDir: "./tests/e2e" },
+    // パッケージ版の生成物が要るので既定の実行には含めない（npm run test:packaged）
+    { name: "packaged", testDir: "./tests/packaged" },
   ],
 });

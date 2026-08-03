@@ -173,6 +173,9 @@ function createWindow(): void {
     height: 900,
     backgroundColor: "#0d1117",
     title: "PaneDeck",
+    // パッケージ版は electron-builder が実行ファイルに埋め込むが、
+    // npm start で動かしているときはここで指定しないと既定のままになる
+    icon: path.join(app.getAppPath(), "build", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

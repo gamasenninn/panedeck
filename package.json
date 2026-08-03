@@ -8,11 +8,15 @@
     "start": "npm run build && electron .",
     "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.renderer.json",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && npm run build && npx playwright test",
+    "test": "npm run typecheck && npm run build && npx playwright test --project=unit --project=e2e",
     "test:unit": "npx playwright test --project=unit",
     "test:e2e": "npx playwright test --project=e2e",
+    "test:packaged": "npm run pack && npx playwright test --project=packaged",
     "test:headed": "npx playwright test --project=e2e --headed",
     "test:report": "npx playwright show-report",
+    "icon": "node scripts/make-icon.mjs",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder",
     "rebuild": "electron-rebuild -f -w node-pty"
   },
   "devDependencies": {
@@ -20,6 +24,8 @@
     "@playwright/test": "^1.58.2",
     "@types/node": "^26.1.2",
     "electron": "^40.6.1",
+    "electron-builder": "^26.15.3",
+    "sharp": "^0.35.3",
     "typescript": "^7.0.2"
   },
   "dependencies": {

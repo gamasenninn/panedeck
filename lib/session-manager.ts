@@ -194,9 +194,17 @@ export class SessionManager {
     return ordered;
   }
 
+  /**
+   * pty のサイズを変える。
+   *
+   * 終了済みのセッションは対象外。node-pty は終了した pty をリサイズすると
+   * 例外を投げ、レンダラは文字サイズ・列数・ウィンドウの変化のたびに全ペインへ
+   * resize を投げるので、終了したペインが 1 つ残っているだけでメインプロセスの
+   * 未処理例外になる。書き込み（write）と同じ扱いにそろえる。
+   */
   resize(id: string, cols: number, rows: number): boolean {
     const session = this.sessions.get(id);
-    if (!session) return false;
+    if (!session || session.exited) return false;
     session.cols = cols;
     session.rows = rows;
     session.pty.resize(cols, rows);
