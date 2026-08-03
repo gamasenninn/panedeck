@@ -122,6 +122,12 @@ export interface Settings {
   fontSize: number;
   /** 起動時に前回のセッション構成を自動で復元するか */
   autoRestore: boolean;
+  /** セッションの出力をファイルへ書き出すか */
+  autoLog: boolean;
+  /** ログの出力先。空なら userData 配下の既定の場所 */
+  logDir: string;
+  /** ログから ANSI エスケープを落とすか */
+  logStripAnsi: boolean;
 }
 
 /** 一斉送信の絞り込み */
@@ -179,6 +185,9 @@ export interface DeckApi {
 
   onSessionData(cb: (id: string, data: string) => void): void;
   onSessionExit(cb: (id: string, exitCode: number) => void): void;
+  onLogError(
+    cb: (failure: { id: string; filePath: string; error: string }) => void
+  ): void;
 
   getSettings(): Promise<Settings>;
   setSettings(

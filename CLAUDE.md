@@ -98,6 +98,7 @@ panedeck/
 │   ├── agent-profiles.js    # エージェント定義（表示名/起動コマンド/待機パターン）
 │   ├── command.js           # 起動コマンドの正規化
 │   ├── settings.js          # アプリ設定の読み書き（保存先パスは注入）
+│   ├── log-writer.js        # 出力のバッファリングとファイル追記
 │   └── workspace.js         # セッション構成の保存・復元
 ├── types/
 │   ├── panedeck.d.ts        # 層をまたぐ受け渡しの形（Session / DeckApi など）

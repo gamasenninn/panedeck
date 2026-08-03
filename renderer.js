@@ -48,6 +48,9 @@ const fontSizeInput = /** @type {HTMLInputElement} */ (
 const autoRestoreEl = /** @type {HTMLInputElement} */ (
   document.getElementById("auto-restore")
 );
+const autoLogEl = /** @type {HTMLInputElement} */ (
+  document.getElementById("auto-log")
+);
 
 /** @type {Map<string, Pane>} セッション id → ペイン */
 const panes = new Map();
@@ -410,11 +413,33 @@ async function commitAutoRestore() {
   autoRestoreEl.checked = result.settings.autoRestore;
 }
 
+/**
+ * ログの自動保存の ON / OFF を保存する。
+ *
+ * 既に開いているセッションの分も含めて、メインプロセス側が書き出しを
+ * 開始・停止する。
+ */
+async function commitAutoLog() {
+  const result = await api.setSettings({ autoLog: autoLogEl.checked });
+  if (!result.ok) {
+    showMessage(`設定を保存できません: ${result.error}`, { error: true });
+    autoLogEl.checked = !autoLogEl.checked;
+    return;
+  }
+
+  autoLogEl.checked = result.settings.autoLog;
+  // 出力先は設定ファイルでしか変えられないので、有効にしたときに示す
+  showMessage(
+    autoLogEl.checked ? "ログの自動保存を開始しました" : "ログの自動保存を止めました"
+  );
+}
+
 /** 起動時に保存済みの設定を読み込む。 */
 async function loadSettings() {
   const settings = await api.getSettings();
   applyFontSize(settings.fontSize);
   autoRestoreEl.checked = settings.autoRestore;
+  autoLogEl.checked = settings.autoLog;
 }
 
 async function addSession() {
@@ -479,6 +504,8 @@ fontSizeInput.addEventListener("change", commitFontSize);
 
 autoRestoreEl.addEventListener("change", commitAutoRestore);
 
+autoLogEl.addEventListener("change", commitAutoLog);
+
 const keyButtons = /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll("#keys button")
 );
@@ -521,6 +548,11 @@ api.onSessionData((id, data) => {
 
 api.onSessionExit((id) => {
   panes.get(id)?.term.write("\r\n\x1b[31m[プロセスが終了しました]\x1b[0m\r\n");
+});
+
+// 書き込みに失敗したセッションはメイン側が記録を諦めるので、通知は一度きり
+api.onLogError(({ filePath, error }) => {
+  showMessage(`ログを保存できません (${filePath}): ${error}`, { error: true });
 });
 
 window.addEventListener("resize", () => panes.forEach(fit));

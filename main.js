@@ -12,6 +12,7 @@ const {
 } = require("./lib/workspace");
 const { listProfiles } = require("./lib/agent-profiles");
 const { readSettings, updateSettings } = require("./lib/settings");
+const { LogWriter } = require("./lib/log-writer");
 
 let mainWindow;
 
@@ -38,6 +39,55 @@ function settingsPath() {
  */
 function autoRestorePath() {
   return path.join(path.dirname(settingsPath()), "last-session.json");
+}
+
+/** ログの出力先。設定が空なら設定ファイルと同じ場所の logs/ */
+function logDir() {
+  return (
+    readSettings(settingsPath()).logDir ||
+    path.join(path.dirname(settingsPath()), "logs")
+  );
+}
+
+/**
+ * ログの自動保存。無効なときは null。
+ * @type {InstanceType<typeof LogWriter>|null}
+ */
+let logWriter = null;
+
+/** 溜まった出力を書き出す間隔 (ms) */
+const LOG_FLUSH_MS = 300;
+
+/**
+ * 失敗を通知して、それ以上溜め込まないようにする。
+ *
+ * LogWriter 側で失敗したセッションは書き込みを諦めるので、通知は
+ * セッションごとに一度きりになる。
+ */
+function reportLogFailures(failures) {
+  for (const failure of failures) {
+    sendToRenderer("log:error", failure);
+  }
+}
+
+/** 設定に合わせてログの自動保存を開始・停止する。 */
+function applyLogSettings() {
+  const settings = readSettings(settingsPath());
+
+  if (!settings.autoLog) {
+    if (logWriter) reportLogFailures(logWriter.closeAll());
+    logWriter = null;
+    return;
+  }
+
+  // 出力先や ANSI の扱いが変わることもあるので、有効化のたびに作り直す。
+  // 既に開いているセッションは新しいファイルへ続きを書く
+  if (logWriter) logWriter.closeAll();
+  logWriter = new LogWriter({ dir: logDir(), stripAnsi: settings.logStripAnsi });
+
+  for (const session of sessionManager.list()) {
+    logWriter.open(session.id, session.title);
+  }
 }
 
 /**
@@ -109,7 +159,11 @@ function sendToRenderer(channel, payload) {
   }
 }
 
-sessionManager.onData((id, data) => sendToRenderer("session:data", { id, data }));
+sessionManager.onData((id, data) => {
+  sendToRenderer("session:data", { id, data });
+  // 書き込みはここでは行わない。pty の出力は高頻度なので、溜めて定期的に流す
+  logWriter?.append(id, data);
+});
 sessionManager.onExit((id, exitCode) =>
   sendToRenderer("session:exit", { id, exitCode })
 );
@@ -134,15 +188,23 @@ app.whenReady().then(() => {
   // ウィンドウより先に復元する。レンダラは一覧をポーリングして追従し、
   // それまでの出力は各セッションのログに溜まって初回描画時に流し込まれる
   restoreLastSession();
+  applyLogSettings();
   createWindow();
+
+  setInterval(() => {
+    if (logWriter) reportLogFailures(logWriter.flush());
+  }, LOG_FLUSH_MS);
 });
 
 app.on("window-all-closed", () => {
+  // 書き残しを先に吐き出してからセッションを畳む
+  logWriter?.closeAll();
   sessionManager.closeAll();
   if (process.platform !== "darwin") app.quit();
 });
 
 app.on("will-quit", () => {
+  logWriter?.closeAll();
   sessionManager.closeAll();
 });
 
@@ -164,6 +226,7 @@ ipcMain.handle("session:create", (_, options = {}) => {
       agent: options.agent,
     });
 
+    logWriter?.open(session.id, session.title);
     persistSessions();
     return { ok: true, session };
   } catch (err) {
@@ -177,12 +240,14 @@ ipcMain.handle("session:list", () => sessionManager.list());
 ipcMain.handle("agent:list", () => listProfiles());
 
 ipcMain.handle("session:close", (_, id) => {
+  if (logWriter) reportLogFailures(logWriter.close(id));
   const closed = sessionManager.close(id);
   persistSessions();
   return closed;
 });
 
 ipcMain.handle("session:closeAll", () => {
+  if (logWriter) reportLogFailures(logWriter.closeAll());
   const count = sessionManager.closeAll();
   persistSessions();
   return count;
@@ -217,7 +282,9 @@ ipcMain.handle("settings:set", (_, settings) => {
   try {
     // 変更された項目だけが送られてくるので重ねて書く。
     // 書けた値をそのまま返し、レンダラは丸められた後の値を表示に使う
-    return { ok: true, settings: updateSettings(settingsPath(), settings) };
+    const saved = updateSettings(settingsPath(), settings);
+    applyLogSettings();
+    return { ok: true, settings: saved };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -285,6 +352,8 @@ ipcMain.handle("workspace:restore", async (_, options = {}) => {
         agent: entry.agent || options.agent,
       })
     );
+    for (const session of created) logWriter?.open(session.id, session.title);
+
     persistSessions();
     return { ok: true, name: workspace.name, sessions: created };
   } catch (err) {

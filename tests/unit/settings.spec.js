@@ -64,7 +64,53 @@ test.describe("normalizeSettings", () => {
 
   test("未知のフィールドは持ち込まない", () => {
     const settings = normalizeSettings({ fontSize: 14, evil: "rm -rf" });
-    expect(Object.keys(settings).sort()).toEqual(["autoRestore", "fontSize"]);
+    expect(Object.keys(settings).sort()).toEqual([
+      "autoLog",
+      "autoRestore",
+      "fontSize",
+      "logDir",
+      "logStripAnsi",
+    ]);
+  });
+});
+
+test.describe("normalizeSettings - ログの自動保存", () => {
+  test("既定は無効", () => {
+    // 保持期間の上限がまだ無く、放っておくと際限なく溜まる。
+    // ディスクへ黙って書き続けるより、明示的に選ばせる
+    expect(DEFAULT_SETTINGS.autoLog).toBe(false);
+    expect(normalizeSettings({}).autoLog).toBe(false);
+  });
+
+  test("真偽値はそのまま通す", () => {
+    expect(normalizeSettings({ autoLog: true }).autoLog).toBe(true);
+  });
+
+  test("真偽値でない値は既定にする", () => {
+    for (const bogus of ["yes", 1, null, {}]) {
+      expect(normalizeSettings({ autoLog: bogus }).autoLog).toBe(false);
+    }
+  });
+
+  test("ANSI は既定で除去する（後から読むため）", () => {
+    expect(DEFAULT_SETTINGS.logStripAnsi).toBe(true);
+    expect(normalizeSettings({ logStripAnsi: false }).logStripAnsi).toBe(false);
+    expect(normalizeSettings({ logStripAnsi: "no" }).logStripAnsi).toBe(true);
+  });
+
+  test("出力先の既定は空（呼び出し側が既定の場所を決める）", () => {
+    expect(DEFAULT_SETTINGS.logDir).toBe("");
+    expect(normalizeSettings({ logDir: "C:\\logs" }).logDir).toBe("C:\\logs");
+  });
+
+  test("出力先が文字列でなければ既定にする", () => {
+    for (const bogus of [123, null, {}, []]) {
+      expect(normalizeSettings({ logDir: bogus }).logDir).toBe("");
+    }
+  });
+
+  test("出力先の前後の空白は落とす", () => {
+    expect(normalizeSettings({ logDir: "  C:\\logs  " }).logDir).toBe("C:\\logs");
   });
 });
 
@@ -90,7 +136,7 @@ test.describe("normalizeSettings - 自動復元", () => {
 
   test("文字サイズと独立して保存できる", () => {
     const settings = normalizeSettings({ fontSize: 20, autoRestore: false });
-    expect(settings).toEqual({ fontSize: 20, autoRestore: false });
+    expect(settings).toEqual({ ...DEFAULT_SETTINGS, fontSize: 20, autoRestore: false });
   });
 });
 
@@ -186,7 +232,11 @@ test.describe("updateSettings（部分更新）", () => {
 
     updateSettings(filePath, { fontSize: 24 });
 
-    expect(readSettings(filePath)).toEqual({ fontSize: 24, autoRestore: false });
+    expect(readSettings(filePath)).toEqual({
+      ...DEFAULT_SETTINGS,
+      fontSize: 24,
+      autoRestore: false,
+    });
   });
 
   test("もう一方だけでも同じように保たれる", () => {
@@ -195,7 +245,11 @@ test.describe("updateSettings（部分更新）", () => {
 
     updateSettings(filePath, { autoRestore: false });
 
-    expect(readSettings(filePath)).toEqual({ fontSize: 20, autoRestore: false });
+    expect(readSettings(filePath)).toEqual({
+      ...DEFAULT_SETTINGS,
+      fontSize: 20,
+      autoRestore: false,
+    });
   });
 
   test("ファイルがまだ無ければ既定に重ねる", () => {
@@ -203,17 +257,14 @@ test.describe("updateSettings（部分更新）", () => {
 
     updateSettings(filePath, { fontSize: 16 });
 
-    expect(readSettings(filePath)).toEqual({
-      fontSize: 16,
-      autoRestore: DEFAULT_SETTINGS.autoRestore,
-    });
+    expect(readSettings(filePath)).toEqual({ ...DEFAULT_SETTINGS, fontSize: 16 });
   });
 
   test("正規化後の設定全体を返す", () => {
     const filePath = path.join(TEMP_DIR, "update-return.json");
     expect(updateSettings(filePath, { fontSize: 999 })).toEqual({
+      ...DEFAULT_SETTINGS,
       fontSize: FONT_SIZE_MAX,
-      autoRestore: DEFAULT_SETTINGS.autoRestore,
     });
   });
 
@@ -222,6 +273,7 @@ test.describe("updateSettings（部分更新）", () => {
     writeSettings(filePath, { fontSize: 18, autoRestore: false });
 
     expect(updateSettings(filePath, {})).toEqual({
+      ...DEFAULT_SETTINGS,
       fontSize: 18,
       autoRestore: false,
     });
