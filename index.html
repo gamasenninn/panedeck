@@ -102,6 +102,22 @@
         border-color: #58a6ff;
       }
 
+      select {
+        background: #0d1117;
+        color: #e6edf3;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 6px 8px;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+      }
+
+      select:focus {
+        outline: none;
+        border-color: #58a6ff;
+      }
+
       .spacer {
         flex: 1;
       }
@@ -318,6 +334,11 @@
   <body>
     <header id="toolbar">
       <h1>Pane<span>Deck</span></h1>
+
+      <div class="field">
+        <label for="agent-select">エージェント</label>
+        <select id="agent-select" data-testid="agent-select"></select>
+      </div>
 
       <div class="field">
         <label for="launch-command">起動コマンド</label>

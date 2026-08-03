@@ -9,6 +9,7 @@ const broadcastTargetEl = document.getElementById("broadcast-target");
 const broadcastInput = document.getElementById("broadcast-input");
 const waitingOnlyEl = document.getElementById("waiting-only");
 const launchCommandInput = document.getElementById("launch-command");
+const agentSelectEl = document.getElementById("agent-select");
 const messageEl = document.getElementById("message");
 
 /** @type {Map<string, object>} セッション id → ペイン */
@@ -262,6 +263,30 @@ function updateBroadcastTarget() {
 
 // -------------------------------------------------------------------- 操作
 
+/**
+ * エージェント選択を組み立てる。
+ *
+ * 判定に使う正規表現はメインプロセス側にあり、ここへは id / 表示名 / 既定コマンド
+ * だけが来る。選ぶと起動コマンド欄をそのエージェントの既定で置き換えるが、
+ * 手で書き換えた値はそのまま使われる（コマンドと判定は独立して指定できる）。
+ */
+async function setupAgentSelect() {
+  const profiles = await api.listAgents();
+
+  for (const profile of profiles) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = profile.name;
+    option.dataset.command = profile.command;
+    agentSelectEl.appendChild(option);
+  }
+
+  agentSelectEl.addEventListener("change", () => {
+    const selected = agentSelectEl.selectedOptions[0];
+    if (selected) launchCommandInput.value = selected.dataset.command ?? "";
+  });
+}
+
 async function addSession() {
   const cwd = await api.pickDirectory();
   if (!cwd) return;
@@ -269,6 +294,7 @@ async function addSession() {
   const result = await api.createSession({
     cwd,
     initialCommand: launchCommandInput.value.trim(),
+    agent: agentSelectEl.value,
   });
   if (!result.ok) {
     showMessage(`セッションを起動できません: ${result.error}`, { error: true });
@@ -342,6 +368,7 @@ document
   .addEventListener("click", async () => {
     const result = await api.restoreWorkspace({
       initialCommand: launchCommandInput.value.trim(),
+      agent: agentSelectEl.value,
     });
     if (result.ok === false && result.error) {
       showMessage(`復元できません: ${result.error}`, { error: true });
@@ -363,4 +390,5 @@ window.addEventListener("resize", () => panes.forEach(fit));
 
 // メインプロセス側で増減したセッションにも追従する
 setInterval(sync, 300);
+setupAgentSelect();
 sync();

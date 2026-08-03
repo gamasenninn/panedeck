@@ -317,6 +317,62 @@ test.describe("状態の算出", () => {
   });
 });
 
+test.describe("エージェントプロファイル", () => {
+  test("指定した agent がスナップショットに載る", () => {
+    const { manager } = setup();
+    const session = manager.create({ cwd: "a", agent: "codex" });
+
+    expect(session.agent).toBe("codex");
+    expect(manager.get(session.id).agent).toBe("codex");
+  });
+
+  test("未指定なら既定の claude になる（現行動作の維持）", () => {
+    const { manager } = setup();
+    expect(manager.create({ cwd: "a" }).agent).toBe("claude");
+  });
+
+  test("未知の agent は既定へ正規化される", () => {
+    const { manager } = setup();
+    expect(manager.create({ cwd: "a", agent: "nonexistent" }).agent).toBe("claude");
+  });
+
+  test("エージェントごとに異なるパターンで判定される", () => {
+    const { manager, ptyFactory, now } = setup();
+    const claude = manager.create({ cwd: "a", agent: "claude" });
+    const codex = manager.create({ cwd: "b", agent: "codex" });
+
+    // Claude Code の入力ボックスは claude のプロファイルでだけ入力待ちになる
+    ptyFactory.created[0].emitData("│ > ");
+    ptyFactory.created[1].emitData("│ > ");
+    now.advance(QUIET_MS + 100);
+
+    expect(manager.get(claude.id).status).toBe(STATUS.WAITING);
+    expect(manager.get(codex.id).status).toBe(STATUS.IDLE);
+  });
+
+  test("共通の確認プロンプトはどのエージェントでも入力待ちになる", () => {
+    const { manager, ptyFactory, now } = setup();
+    const claude = manager.create({ cwd: "a", agent: "claude" });
+    const codex = manager.create({ cwd: "b", agent: "codex" });
+
+    ptyFactory.created[0].emitData("Continue? (y/n)");
+    ptyFactory.created[1].emitData("Continue? (y/n)");
+    now.advance(QUIET_MS + 100);
+
+    expect(manager.get(claude.id).status).toBe(STATUS.WAITING);
+    expect(manager.get(codex.id).status).toBe(STATUS.WAITING);
+  });
+
+  test("未知の agent でも既定のパターンで判定できる", () => {
+    const { manager, ptyFactory, now } = setup();
+    const session = manager.create({ cwd: "a", agent: "nonexistent" });
+    ptyFactory.last().emitData("│ > ");
+    now.advance(QUIET_MS + 100);
+
+    expect(manager.get(session.id).status).toBe(STATUS.WAITING);
+  });
+});
+
 test.describe("状態で絞った一斉送信", () => {
   /**
    * 4 つの状態がそろったデッキを作る。

@@ -154,6 +154,25 @@ test.describe("parseWorkspace", () => {
     expect(ws.sessions[0].initialCommand).toBeUndefined();
   });
 
+  test("agent の無い既存ファイルも読める（後方互換）", () => {
+    const text = JSON.stringify({
+      version: WORKSPACE_VERSION,
+      sessions: [{ cwd: "C:\\app\\repo-a", initialCommand: "claude" }],
+    });
+    expect(parseWorkspace(text).sessions[0].agent).toBeUndefined();
+  });
+
+  test("agent が文字列でなければ捨てる", () => {
+    const text = JSON.stringify({
+      version: WORKSPACE_VERSION,
+      sessions: [{ cwd: "C:\\a", agent: 7 }, { cwd: "C:\\b", agent: "" }],
+    });
+    expect(parseWorkspace(text).sessions.map((s) => s.agent)).toEqual([
+      undefined,
+      undefined,
+    ]);
+  });
+
   test("起動コマンドが文字列でなければ捨てる", () => {
     const text = JSON.stringify({
       version: WORKSPACE_VERSION,
@@ -207,6 +226,21 @@ test.describe("saveWorkspace / loadWorkspace", () => {
     const filePath = path.join(TEMP_DIR, "empty.json");
     saveWorkspace(filePath, []);
     expect(loadWorkspace(filePath).sessions).toEqual([]);
+  });
+
+  test("エージェントプロファイルも往復する", () => {
+    const filePath = path.join(TEMP_DIR, "agents.json");
+    saveWorkspace(filePath, [
+      { cwd: "C:\\a", agent: "claude", initialCommand: "claude" },
+      { cwd: "C:\\b", agent: "codex", initialCommand: "codex" },
+      { cwd: "C:\\c" },
+    ]);
+
+    expect(loadWorkspace(filePath).sessions.map((s) => s.agent)).toEqual([
+      "claude",
+      "codex",
+      undefined,
+    ]);
   });
 
   test("セッションごとに異なる起動コマンドが往復する", () => {

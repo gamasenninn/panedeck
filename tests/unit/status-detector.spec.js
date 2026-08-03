@@ -215,3 +215,73 @@ test.describe("detectStatus - 優先順位", () => {
     expect(status).toBe(STATUS.IDLE);
   });
 });
+
+test.describe("detectStatus - 待機パターンの差し替え", () => {
+  const quiet = { msSinceLastOutput: QUIET_MS + 100, exited: false };
+
+  test("渡したパターンで判定する", () => {
+    const status = detectStatus({
+      ...quiet,
+      tail: "codex awaiting instructions >>>",
+      waitingPatterns: [/>>>\s*$/],
+    });
+    expect(status).toBe(STATUS.WAITING);
+  });
+
+  test("渡したパターンに一致しなければ idle", () => {
+    const status = detectStatus({
+      ...quiet,
+      tail: "Done.",
+      waitingPatterns: [/>>>\s*$/],
+    });
+    expect(status).toBe(STATUS.IDLE);
+  });
+
+  test("差し替えると既定のパターンは使われない", () => {
+    // Claude の入力ボックスでも、別エージェント用のパターンなら waiting にしない
+    const status = detectStatus({
+      ...quiet,
+      tail: "│ > ",
+      waitingPatterns: [/>>>\s*$/],
+    });
+    expect(status).toBe(STATUS.IDLE);
+  });
+
+  test("空配列を渡すと何も入力待ちにならない", () => {
+    const status = detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: [] });
+    expect(status).toBe(STATUS.IDLE);
+  });
+
+  test("未指定なら既定のパターンで判定する（現行動作）", () => {
+    expect(detectStatus({ ...quiet, tail: "│ > " })).toBe(STATUS.WAITING);
+  });
+
+  test("配列でない値を渡しても落ちず既定にフォールバックする", () => {
+    expect(
+      detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: "not-an-array" })
+    ).toBe(STATUS.WAITING);
+    expect(detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: null })).toBe(
+      STATUS.WAITING
+    );
+  });
+
+  test("終了・実行中の判定はパターンより優先される", () => {
+    expect(
+      detectStatus({
+        tail: ">>>",
+        msSinceLastOutput: 0,
+        exited: false,
+        waitingPatterns: [/>>>/],
+      })
+    ).toBe(STATUS.RUNNING);
+
+    expect(
+      detectStatus({
+        tail: ">>>",
+        msSinceLastOutput: 9999,
+        exited: true,
+        waitingPatterns: [/>>>/],
+      })
+    ).toBe(STATUS.EXITED);
+  });
+});

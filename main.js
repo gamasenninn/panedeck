@@ -6,6 +6,7 @@ const pty = require("node-pty");
 
 const { SessionManager } = require("./lib/session-manager");
 const { saveWorkspace, loadWorkspace } = require("./lib/workspace");
+const { listProfiles } = require("./lib/agent-profiles");
 
 let mainWindow;
 
@@ -86,6 +87,8 @@ ipcMain.handle("session:create", (_, options = {}) => {
       // 起動直後に流し込むコマンド（例: "claude"）。SessionManager が保持し、
       // 起動時の書き込みも担うので、ここでは渡すだけでよい
       initialCommand: options.initialCommand,
+      // 入力待ちの判定パターンを決めるプロファイル id
+      agent: options.agent,
     });
 
     return { ok: true, session };
@@ -95,6 +98,9 @@ ipcMain.handle("session:create", (_, options = {}) => {
 });
 
 ipcMain.handle("session:list", () => sessionManager.list());
+
+// 判定に使う正規表現は含まない（IPC に載らないため）。判定はメイン側で行う
+ipcMain.handle("agent:list", () => listProfiles());
 
 ipcMain.handle("session:close", (_, id) => sessionManager.close(id));
 
@@ -180,6 +186,7 @@ ipcMain.handle("workspace:restore", async (_, options = {}) => {
         // セッションごとの値を優先し、持たないものはツールバーの値で補う。
         // 起動コマンドを持たない既存のワークスペースでも今までどおり動く
         initialCommand: entry.initialCommand || options.initialCommand,
+        agent: entry.agent || options.agent,
       })
     );
     return { ok: true, name: workspace.name, sessions: created };

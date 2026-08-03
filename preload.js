@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld("deck", {
     ipcRenderer.invoke("session:broadcast", { data, ids, options }),
   pickDirectory: () => ipcRenderer.invoke("session:pickDirectory"),
 
+  // エージェントプロファイル
+  listAgents: () => ipcRenderer.invoke("agent:list"),
+
   // 高頻度の入力・リサイズは戻り値不要なので send/on
   input: (id, data) => ipcRenderer.send("session:input", { id, data }),
   resize: (id, cols, rows) => ipcRenderer.send("session:resize", { id, cols, rows }),
