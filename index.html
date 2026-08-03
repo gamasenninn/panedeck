@@ -134,6 +134,12 @@
         font-size: 12px;
       }
 
+      label.field {
+        cursor: pointer;
+        white-space: nowrap;
+        user-select: none;
+      }
+
       /* --- グリッド --- */
       #grid {
         flex: 1;
@@ -351,6 +357,11 @@
     </main>
 
     <footer id="broadcast-bar">
+      <label class="field" for="waiting-only">
+        <input type="checkbox" id="waiting-only" data-testid="waiting-only" />
+        入力待ちのみ
+      </label>
+
       <span id="broadcast-target" data-testid="broadcast-target">送信先: 全 0 ペイン</span>
       <input
         type="text"

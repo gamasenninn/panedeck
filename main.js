@@ -100,8 +100,8 @@ ipcMain.handle("session:close", (_, id) => sessionManager.close(id));
 
 ipcMain.handle("session:closeAll", () => sessionManager.closeAll());
 
-ipcMain.handle("session:broadcast", (_, { data, ids }) =>
-  sessionManager.broadcast(data, ids)
+ipcMain.handle("session:broadcast", (_, { data, ids, options }) =>
+  sessionManager.broadcast(data, ids, options)
 );
 
 ipcMain.on("session:input", (_, { id, data }) => {

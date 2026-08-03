@@ -7,6 +7,7 @@ const emptyState = document.getElementById("empty-state");
 const sessionCountEl = document.getElementById("session-count");
 const broadcastTargetEl = document.getElementById("broadcast-target");
 const broadcastInput = document.getElementById("broadcast-input");
+const waitingOnlyEl = document.getElementById("waiting-only");
 const launchCommandInput = document.getElementById("launch-command");
 const messageEl = document.getElementById("message");
 
@@ -31,6 +32,9 @@ const STATUS_LABELS = {
   idle: "待機",
   exited: "終了",
 };
+
+/** 「入力待ちのみ」で絞るときの状態 */
+const WAITING = "waiting";
 
 /**
  * ツールバーに通知を出す。
@@ -104,7 +108,16 @@ async function createPane(session) {
   term.open(body);
   if (backlog) term.write(backlog);
 
-  const pane = { id: session.id, el, term, fitAddon, statusEl, titleEl, selectEl };
+  const pane = {
+    id: session.id,
+    el,
+    term,
+    fitAddon,
+    statusEl,
+    titleEl,
+    selectEl,
+    status: session.status,
+  };
   panes.set(session.id, pane);
 
   fit(pane);
@@ -185,6 +198,7 @@ async function sync() {
       }
     } else {
       pane.titleEl.textContent = session.title;
+      pane.status = session.status;
       pane.statusEl.textContent = STATUS_LABELS[session.status] ?? session.status;
       pane.statusEl.dataset.status = session.status;
     }
@@ -197,10 +211,12 @@ async function sync() {
   updateBroadcastTarget();
 }
 
+function selectedPanes() {
+  return [...panes.values()].filter((pane) => pane.selectEl.checked);
+}
+
 function selectedIds() {
-  return [...panes.values()]
-    .filter((pane) => pane.selectEl.checked)
-    .map((pane) => pane.id);
+  return selectedPanes().map((pane) => pane.id);
 }
 
 /** 送信対象。チェックが無ければ全ペイン。 */
@@ -209,12 +225,39 @@ function targetIds() {
   return selected.length > 0 ? selected : null;
 }
 
+/**
+ * 状態による絞り込み。
+ *
+ * 絞り込み自体はメインプロセスに委ねる。レンダラが持つ状態は 300ms ポーリング
+ * ぶん古くなりうるので、送信可否はその場で状態を算出できる側で決める。
+ */
+function broadcastOptions() {
+  return waitingOnlyEl.checked ? { onlyStatus: WAITING } : undefined;
+}
+
+/** 送信先が 0 件だったときの説明。 */
+function noTargetMessage() {
+  return waitingOnlyEl.checked
+    ? "入力待ちのペインがありません"
+    : "送信先のペインがありません";
+}
+
 function updateBroadcastTarget() {
-  const selected = selectedIds();
-  broadcastTargetEl.textContent =
-    selected.length > 0
-      ? `送信先: 選択 ${selected.length} ペイン`
-      : `送信先: 全 ${panes.size} ペイン`;
+  const selected = selectedPanes();
+  const scoped = selected.length > 0;
+  const targets = scoped ? selected : [...panes.values()];
+
+  if (!waitingOnlyEl.checked) {
+    broadcastTargetEl.textContent = scoped
+      ? `送信先: 選択 ${targets.length} ペイン`
+      : `送信先: 全 ${targets.length} ペイン`;
+    return;
+  }
+
+  const count = targets.filter((pane) => pane.status === WAITING).length;
+  broadcastTargetEl.textContent = scoped
+    ? `送信先: 選択のうち入力待ち ${count} ペイン`
+    : `送信先: 入力待ち ${count} ペイン`;
 }
 
 // -------------------------------------------------------------------- 操作
@@ -239,14 +282,29 @@ async function addSession() {
 async function sendBroadcast() {
   const text = broadcastInput.value;
   if (text === "") return;
-  await api.broadcast(`${text}\r`, targetIds());
+
+  const sent = await api.broadcast(`${text}\r`, targetIds(), broadcastOptions());
+  if (sent === 0) {
+    // 打ち直さずに済むよう入力は残す
+    showMessage(noTargetMessage(), { error: true });
+    return;
+  }
+
+  showMessage("");
   broadcastInput.value = "";
 }
 
 async function sendKey(key) {
   const sequence = KEY_SEQUENCES[key];
   if (!sequence) return;
-  await api.broadcast(sequence, targetIds());
+
+  const sent = await api.broadcast(sequence, targetIds(), broadcastOptions());
+  if (sent === 0) {
+    showMessage(noTargetMessage(), { error: true });
+    return;
+  }
+
+  showMessage("");
 }
 
 // ---------------------------------------------------------------- イベント
@@ -258,6 +316,8 @@ document.getElementById("broadcast-send").addEventListener("click", sendBroadcas
 broadcastInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") sendBroadcast();
 });
+
+waitingOnlyEl.addEventListener("change", updateBroadcastTarget);
 
 document.querySelectorAll("#keys button").forEach((button) => {
   button.addEventListener("click", () => sendKey(button.dataset.key));

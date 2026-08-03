@@ -317,6 +317,106 @@ test.describe("状態の算出", () => {
   });
 });
 
+test.describe("状態で絞った一斉送信", () => {
+  /**
+   * 4 つの状態がそろったデッキを作る。
+   *
+   * 状態は「最後の出力からの経過時間」で決まるので、まとめて出力させてから
+   * 時計を進め、running にしたいものだけ進めた後に出力させる。
+   */
+  function setupDeck() {
+    const { manager, ptyFactory, now } = setup();
+    const waiting = manager.create({ cwd: "waiting" });
+    const idle = manager.create({ cwd: "idle" });
+    const running = manager.create({ cwd: "running" });
+    const exited = manager.create({ cwd: "exited" });
+
+    ptyFactory.created[0].emitData("│ > ");
+    ptyFactory.created[1].emitData("Done.");
+    ptyFactory.created[3].emitData("bye");
+    now.advance(QUIET_MS + 100);
+
+    ptyFactory.created[2].emitData("building...");
+    ptyFactory.created[3].emitExit(0);
+
+    return { manager, ptyFactory, now, waiting, idle, running, exited };
+  }
+
+  test("前提: 4 つの状態がそろっている", () => {
+    const { manager } = setupDeck();
+    expect(manager.list().map((s) => s.status)).toEqual([
+      STATUS.WAITING,
+      STATUS.IDLE,
+      STATUS.RUNNING,
+      STATUS.EXITED,
+    ]);
+  });
+
+  test("入力待ちのセッションにだけ書き込む", () => {
+    const { manager, ptyFactory } = setupDeck();
+    manager.broadcast("go\r", undefined, { onlyStatus: STATUS.WAITING });
+
+    expect(ptyFactory.created[0].written).toEqual(["go\r"]);
+    expect(ptyFactory.created[1].written).toEqual([]);
+    expect(ptyFactory.created[2].written).toEqual([]);
+    expect(ptyFactory.created[3].written).toEqual([]);
+  });
+
+  test("書き込めた数を返す", () => {
+    const { manager } = setupDeck();
+    expect(manager.broadcast("go\r", undefined, { onlyStatus: STATUS.WAITING })).toBe(1);
+  });
+
+  test("該当が無ければ 0 を返し、誰にも書き込まない", () => {
+    const { manager, ptyFactory } = setupDeck();
+    // 入力待ちのセッションを閉じてから送る
+    manager.close(manager.list()[0].id);
+
+    expect(manager.broadcast("go\r", undefined, { onlyStatus: STATUS.WAITING })).toBe(0);
+    expect(ptyFactory.created.every((p) => p.written.length === 0)).toBe(true);
+  });
+
+  test("ids と併用すると「ids のうち入力待ち」だけに送る", () => {
+    const { manager, ptyFactory, waiting, idle } = setupDeck();
+    manager.broadcast("go\r", [idle.id], { onlyStatus: STATUS.WAITING });
+    expect(ptyFactory.created[0].written).toEqual([]);
+    expect(ptyFactory.created[1].written).toEqual([]);
+
+    manager.broadcast("go\r", [waiting.id, idle.id], { onlyStatus: STATUS.WAITING });
+    expect(ptyFactory.created[0].written).toEqual(["go\r"]);
+    expect(ptyFactory.created[1].written).toEqual([]);
+  });
+
+  test("他の状態でも絞れる", () => {
+    const { manager, ptyFactory } = setupDeck();
+    manager.broadcast("x", undefined, { onlyStatus: STATUS.IDLE });
+    expect(ptyFactory.created[1].written).toEqual(["x"]);
+    expect(ptyFactory.created[0].written).toEqual([]);
+  });
+
+  test("onlyStatus 未指定なら従来どおり全セッションへ送る", () => {
+    const { manager, ptyFactory } = setupDeck();
+    // 終了済みは元から書き込めないので 3
+    expect(manager.broadcast("all\r")).toBe(3);
+    expect(ptyFactory.created[0].written).toEqual(["all\r"]);
+    expect(ptyFactory.created[1].written).toEqual(["all\r"]);
+    expect(ptyFactory.created[2].written).toEqual(["all\r"]);
+    expect(ptyFactory.created[3].written).toEqual([]);
+  });
+
+  test("未知の状態を渡したら誰にも送らない", () => {
+    const { manager, ptyFactory } = setupDeck();
+    expect(manager.broadcast("x", undefined, { onlyStatus: "nonsense" })).toBe(0);
+    expect(ptyFactory.created.every((p) => p.written.length === 0)).toBe(true);
+  });
+
+  test("終了済みは exited で絞っても書き込めない", () => {
+    const { manager, ptyFactory } = setupDeck();
+    expect(manager.broadcast("x", undefined, { onlyStatus: STATUS.EXITED })).toBe(0);
+    expect(ptyFactory.created[3].written).toEqual([]);
+  });
+});
+
 test.describe("起動コマンド (initialCommand)", () => {
   test("起動直後に pty へ改行付きで書き込む", () => {
     const { manager, ptyFactory } = setup();

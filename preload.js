@@ -6,7 +6,8 @@ contextBridge.exposeInMainWorld("deck", {
   listSessions: () => ipcRenderer.invoke("session:list"),
   closeSession: (id) => ipcRenderer.invoke("session:close", id),
   closeAllSessions: () => ipcRenderer.invoke("session:closeAll"),
-  broadcast: (data, ids) => ipcRenderer.invoke("session:broadcast", { data, ids }),
+  broadcast: (data, ids, options) =>
+    ipcRenderer.invoke("session:broadcast", { data, ids, options }),
   pickDirectory: () => ipcRenderer.invoke("session:pickDirectory"),
 
   // 高頻度の入力・リサイズは戻り値不要なので send/on
