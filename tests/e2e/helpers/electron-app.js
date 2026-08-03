@@ -5,9 +5,21 @@ const APP_PATH = path.resolve(__dirname, "..", "..", "..");
 
 /**
  * Electron アプリを起動し、アプリと最初のウィンドウを返す。
+ *
+ * `settingsPath` を渡すと設定ファイルの場所を差し替える。レンダラは起動直後に
+ * 設定を読むので、起動後に注入する方式では初回の読み込みに間に合わない。
+ * 環境変数なら main が最初に見るところに割り込めるうえ、アプリを再起動する
+ * テストでも同じ場所を指し続けられる。
+ *
+ * @param {{settingsPath?: string}} [options]
  */
-async function launchApp() {
-  const electronApp = await electron.launch({ args: [APP_PATH] });
+async function launchApp({ settingsPath } = {}) {
+  const electronApp = await electron.launch({
+    args: [APP_PATH],
+    env: settingsPath
+      ? { ...process.env, PANEDECK_SETTINGS_PATH: settingsPath }
+      : process.env,
+  });
   const page = await electronApp.firstWindow();
   await page.waitForLoadState("domcontentloaded");
   return { electronApp, page };

@@ -102,6 +102,22 @@
         border-color: #58a6ff;
       }
 
+      input[type="number"] {
+        background: #0d1117;
+        color: #e6edf3;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 6px 4px 6px 8px;
+        font-size: 12px;
+        font-family: inherit;
+        width: 58px;
+      }
+
+      input[type="number"]:focus {
+        outline: none;
+        border-color: #58a6ff;
+      }
+
       select {
         background: #0d1117;
         color: #e6edf3;
@@ -354,6 +370,20 @@
       <button id="add-session" class="primary" data-testid="add-session">
         + セッション追加
       </button>
+
+      <div class="divider"></div>
+
+      <div class="field">
+        <label for="font-size">文字</label>
+        <input
+          type="number"
+          id="font-size"
+          data-testid="font-size"
+          min="8"
+          max="32"
+          step="1"
+        />
+      </div>
 
       <div class="divider"></div>
 

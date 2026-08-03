@@ -114,6 +114,14 @@ export interface Workspace {
   sessions: WorkspaceEntry[];
 }
 
+/**
+ * アプリ設定。ワークスペース（どこで開くか）とは別で、押さなくても次回に残るもの。
+ */
+export interface Settings {
+  /** 端末の文字サイズ (px) */
+  fontSize: number;
+}
+
 /** 一斉送信の絞り込み */
 export interface BroadcastOptions {
   /** この状態のセッションだけに送る */
@@ -169,6 +177,11 @@ export interface DeckApi {
 
   onSessionData(cb: (id: string, data: string) => void): void;
   onSessionExit(cb: (id: string, exitCode: number) => void): void;
+
+  getSettings(): Promise<Settings>;
+  setSettings(
+    settings: Partial<Settings>
+  ): Promise<{ ok: boolean; settings?: Settings; error?: string }>;
 
   getLog(id: string): Promise<string>;
   saveLog(id: string): Promise<FileResult>;

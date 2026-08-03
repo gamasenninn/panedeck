@@ -42,6 +42,9 @@ const launchCommandInput = /** @type {HTMLInputElement} */ (
 const agentSelectEl = /** @type {HTMLSelectElement} */ (
   document.getElementById("agent-select")
 );
+const fontSizeInput = /** @type {HTMLInputElement} */ (
+  document.getElementById("font-size")
+);
 
 /** @type {Map<string, Pane>} セッション id → ペイン */
 const panes = new Map();
@@ -72,6 +75,15 @@ const STATUS_LABELS = {
  * @type {Types.SessionStatus}
  */
 const WAITING = "waiting";
+
+/**
+ * 端末の文字サイズ。メインプロセスの設定を写したもの。
+ *
+ * 新しく作るペインにも同じ値を渡す必要があるので、ここで保持する。
+ * 正規化（範囲への丸め）はメイン側の lib/settings.js が持ち、ここは
+ * 書き戻ってきた値を受け取るだけにする。規則を二重に持たない。
+ */
+let fontSize = 12;
 
 /**
  * ツールバーに通知を出す。
@@ -136,7 +148,7 @@ async function createPane(session) {
 
   const term = new Terminal({
     cursorBlink: true,
-    fontSize: 12,
+    fontSize,
     fontFamily: '"Cascadia Code", "Consolas", monospace',
     scrollback: 5000,
     theme: { background: "#010409", foreground: "#e6edf3" },
@@ -333,6 +345,56 @@ async function setupAgentSelect() {
   });
 }
 
+// ------------------------------------------------------------------ 設定
+
+/**
+ * 文字サイズを全ペインへ適用する。
+ *
+ * 変更後は fit() を通す。桁数・行数が変わるので、pty 側にも既存の resize 経路で
+ * 伝わる（伝えないと出力の折り返しがずれる）。
+ *
+ * @param {number} size
+ */
+function applyFontSize(size) {
+  fontSize = size;
+  fontSizeInput.value = String(size);
+
+  panes.forEach((pane) => {
+    pane.term.options.fontSize = size;
+    fit(pane);
+  });
+}
+
+/**
+ * 入力欄の変更を設定へ反映する。
+ *
+ * 空欄や数値でない入力は「まだ入力途中」とみなして何もしない。打っている最中に
+ * 勝手に既定へ戻ると打ち直しになるため。範囲への丸めはメイン側が行い、
+ * 返ってきた値で入力欄を上書きする。
+ */
+async function commitFontSize() {
+  const raw = fontSizeInput.value.trim();
+  if (raw === "" || !Number.isFinite(Number(raw))) {
+    fontSizeInput.value = String(fontSize);
+    return;
+  }
+
+  const result = await api.setSettings({ fontSize: Number(raw) });
+  if (!result.ok) {
+    showMessage(`設定を保存できません: ${result.error}`, { error: true });
+    fontSizeInput.value = String(fontSize);
+    return;
+  }
+
+  applyFontSize(result.settings.fontSize);
+}
+
+/** 起動時に保存済みの設定を読み込む。 */
+async function loadSettings() {
+  const settings = await api.getSettings();
+  applyFontSize(settings.fontSize);
+}
+
 async function addSession() {
   const cwd = await api.pickDirectory();
   if (!cwd) return;
@@ -391,6 +453,8 @@ broadcastInput.addEventListener("keydown", (event) => {
 
 waitingOnlyEl.addEventListener("change", updateBroadcastTarget);
 
+fontSizeInput.addEventListener("change", commitFontSize);
+
 const keyButtons = /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll("#keys button")
 );
@@ -440,4 +504,5 @@ window.addEventListener("resize", () => panes.forEach(fit));
 // メインプロセス側で増減したセッションにも追従する
 setInterval(sync, 300);
 setupAgentSelect();
+loadSettings();
 sync();

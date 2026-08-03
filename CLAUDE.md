@@ -95,7 +95,13 @@ panedeck/
 ├── lib/
 │   ├── session-manager.js   # pty セッションのレジストリ（コアロジック）
 │   ├── status-detector.js   # 出力から状態を判定する純粋関数
+│   ├── agent-profiles.js    # エージェント定義（表示名/起動コマンド/待機パターン）
+│   ├── command.js           # 起動コマンドの正規化
+│   ├── settings.js          # アプリ設定の読み書き（保存先パスは注入）
 │   └── workspace.js         # セッション構成の保存・復元
+├── types/
+│   ├── panedeck.d.ts        # 層をまたぐ受け渡しの形（Session / DeckApi など）
+│   └── globals.d.ts         # window.deck・xterm グローバル・E2E の足場
 └── tests/
     ├── unit/            # lib/ のロジック単体テスト（Electron 不要）
     └── e2e/             # Playwright + Electron の E2E テスト

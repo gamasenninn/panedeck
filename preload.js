@@ -23,6 +23,10 @@ contextBridge.exposeInMainWorld("deck", {
   onSessionExit: (cb) =>
     ipcRenderer.on("session:exit", (_, { id, exitCode }) => cb(id, exitCode)),
 
+  // 設定
+  getSettings: () => ipcRenderer.invoke("settings:get"),
+  setSettings: (settings) => ipcRenderer.invoke("settings:set", settings),
+
   // ログ
   getLog: (id) => ipcRenderer.invoke("log:get", id),
   saveLog: (id) => ipcRenderer.invoke("log:save", id),

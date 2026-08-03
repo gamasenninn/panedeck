@@ -7,8 +7,23 @@ const pty = require("node-pty");
 const { SessionManager } = require("./lib/session-manager");
 const { saveWorkspace, loadWorkspace } = require("./lib/workspace");
 const { listProfiles } = require("./lib/agent-profiles");
+const { readSettings, writeSettings } = require("./lib/settings");
 
 let mainWindow;
+
+/**
+ * 設定ファイルの場所。
+ *
+ * 環境変数で差し替えられるようにしてあるのは E2E のため。レンダラは起動直後に
+ * 設定を読むので、起動後に注入する方式では初回の読み込みに間に合わない。
+ * また、アプリを再起動するテストでも同じ場所を指し続けられる。
+ */
+function settingsPath() {
+  return (
+    process.env.PANEDECK_SETTINGS_PATH ||
+    path.join(app.getPath("userData"), "settings.json")
+  );
+}
 
 /** OS 既定のシェル */
 function defaultShell() {
@@ -125,6 +140,19 @@ ipcMain.handle("session:pickDirectory", async () => {
   });
   if (result.canceled || result.filePaths.length === 0) return null;
   return result.filePaths[0];
+});
+
+// --- 設定 ---
+
+ipcMain.handle("settings:get", () => readSettings(settingsPath()));
+
+ipcMain.handle("settings:set", (_, settings) => {
+  try {
+    // 書けた値をそのまま返す。レンダラは丸められた後の値を表示に使う
+    return { ok: true, settings: writeSettings(settingsPath(), settings) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 // --- ログ ---
