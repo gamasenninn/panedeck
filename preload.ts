@@ -1,6 +1,14 @@
-const { contextBridge, ipcRenderer } = require("electron");
+import { contextBridge, ipcRenderer } from "electron";
 
-contextBridge.exposeInMainWorld("deck", {
+import type { DeckApi } from "./types/panedeck";
+
+/**
+ * レンダラへ公開する API。
+ *
+ * `DeckApi` として型を付けてあるので、チャンネル名を変えたりペイロードの形を
+ * 変えたときに、ここと呼び出し側のどちらかだけを直し忘れると検査で落ちる。
+ */
+const deck: DeckApi = {
   // セッション
   createSession: (options) => ipcRenderer.invoke("session:create", options),
   listSessions: () => ipcRenderer.invoke("session:list"),
@@ -36,4 +44,6 @@ contextBridge.exposeInMainWorld("deck", {
   // ワークスペース
   saveWorkspace: (name) => ipcRenderer.invoke("workspace:save", name),
   restoreWorkspace: (options) => ipcRenderer.invoke("workspace:restore", options),
-});
+};
+
+contextBridge.exposeInMainWorld("deck", deck);

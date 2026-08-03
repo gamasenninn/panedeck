@@ -1,7 +1,7 @@
-const { test, expect } = require("@playwright/test");
-const fs = require("fs");
-const path = require("path");
-const {
+﻿import { test, expect } from "@playwright/test";
+import fs from "fs";
+import path from "path";
+import {
   launchApp,
   closeApp,
   useFakePty,
@@ -9,7 +9,7 @@ const {
   listSessions,
   resetSessions,
   waitForPaneCount,
-} = require("./helpers/electron-app");
+} from "./helpers/electron-app";
 
 const TEMP_DIR = path.join(__dirname, "temp-settings");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");
@@ -128,9 +128,7 @@ test.describe("範囲外の入力", () => {
     // input[type=number] は非数値の入力を弾くので、ユーザーの手では到達できない。
     // 値を直接差し込んで、それでもガードが効くことだけを見る
     await page.evaluate(() => {
-      const input = /** @type {HTMLInputElement} */ (
-        document.getElementById("font-size")
-      );
+      const input = document.getElementById("font-size") as HTMLInputElement;
       input.value = "abc";
       input.dispatchEvent(new Event("change"));
     });

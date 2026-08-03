@@ -1,0 +1,25 @@
+{
+  "//": [
+    "レンダラのビルド設定。main 側（tsconfig.build.json）とは出力の性質が違う。",
+    "renderer.ts は import を持たない『古典スクリプト』のままにしてあり、",
+    "tsc はそれをそのまま（型を落としただけの）スクリプトとして出す。",
+    "こうすることで index.html は script タグで読むだけで済み、",
+    "CSP も script-src 'self' のまま変えずにいられる。",
+    "値の import を 1 つでも書くとモジュール出力になり、この前提が崩れる。"
+  ],
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+
+    // import / export を持たないファイルをスクリプトとして扱う。
+    // 既定の "auto" は node 系の module 設定だとモジュール扱いにしてしまい、
+    // 出力の先頭に exports への代入が付いてブラウザで落ちる
+    "moduleDetection": "legacy"
+  },
+  "include": ["renderer.ts", "types/**/*.d.ts"]
+}

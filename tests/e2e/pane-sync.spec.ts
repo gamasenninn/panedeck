@@ -1,5 +1,5 @@
-const { test, expect } = require("@playwright/test");
-const {
+﻿import { test, expect } from "@playwright/test";
+import {
   launchApp,
   closeApp,
   useFakePty,
@@ -7,7 +7,7 @@ const {
   listSessions,
   resetSessions,
   waitForPaneCount,
-} = require("./helpers/electron-app");
+} from "./helpers/electron-app";
 
 let electronApp;
 let page;

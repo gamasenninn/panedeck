@@ -1,14 +1,14 @@
-const { test, expect } = require("@playwright/test");
-const fs = require("fs");
-const path = require("path");
-const {
+﻿import { test, expect } from "@playwright/test";
+import fs from "fs";
+import path from "path";
+import {
   launchApp,
   closeApp,
   createSession,
   listSessions,
   resetSessions,
   waitForPaneCount,
-} = require("./helpers/electron-app");
+} from "./helpers/electron-app";
 
 const TEMP_DIR = path.join(__dirname, "temp-auto-restore");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");

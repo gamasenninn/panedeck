@@ -1,5 +1,6 @@
-const { _electron: electron } = require("@playwright/test");
-const path = require("path");
+﻿import { _electron as electron } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
+import path from "path";
 
 const APP_PATH = path.resolve(__dirname, "..", "..", "..");
 
@@ -10,15 +11,16 @@ const APP_PATH = path.resolve(__dirname, "..", "..", "..");
  * 設定を読むので、起動後に注入する方式では初回の読み込みに間に合わない。
  * 環境変数なら main が最初に見るところに割り込めるうえ、アプリを再起動する
  * テストでも同じ場所を指し続けられる。
- *
- * @param {{settingsPath?: string}} [options]
  */
-async function launchApp({ settingsPath } = {}) {
+export async function launchApp({ settingsPath }: { settingsPath?: string } = {}): Promise<{
+  electronApp: ElectronApplication;
+  page: Page;
+}> {
   const electronApp = await electron.launch({
     args: [APP_PATH],
-    env: settingsPath
+    env: (settingsPath
       ? { ...process.env, PANEDECK_SETTINGS_PATH: settingsPath }
-      : process.env,
+      : process.env) as Record<string, string>,
   });
   const page = await electronApp.firstWindow();
   await page.waitForLoadState("domcontentloaded");
@@ -28,7 +30,7 @@ async function launchApp({ settingsPath } = {}) {
 /**
  * アプリを終了する。
  */
-async function closeApp(electronApp) {
+export async function closeApp(electronApp: ElectronApplication) {
   await electronApp.close();
 }
 
@@ -38,7 +40,7 @@ async function closeApp(electronApp) {
  * 実プロセスを起動しないので、E2E でも write / kill / 出力の発火を
  * 決定的に検証できる。生成された pty は `global.__fakePtys` に積まれる。
  */
-async function useFakePty(electronApp) {
+export async function useFakePty(electronApp: ElectronApplication) {
   await electronApp.evaluate(() => {
     global.__fakePtys = [];
     global.__sessionManager.ptyFactory = (options) => {
@@ -68,14 +70,14 @@ async function useFakePty(electronApp) {
 /**
  * レンダラ経由でセッションを作る（ディレクトリ選択ダイアログを通さない）。
  */
-async function createSession(page, options) {
+export async function createSession(page: Page, options: Record<string, unknown>) {
   return page.evaluate((opts) => window.deck.createSession(opts), options);
 }
 
 /**
  * フェイク pty から出力を発火させる。
  */
-async function emitPtyData(electronApp, index, data) {
+export async function emitPtyData(electronApp: ElectronApplication, index: number, data: string) {
   await electronApp.evaluate(
     (_, { index: i, data: d }) => global.__fakePtys.at(i).emitData(d),
     { index, data }
@@ -85,7 +87,7 @@ async function emitPtyData(electronApp, index, data) {
 /**
  * フェイク pty のプロセス終了を発火させる。
  */
-async function emitPtyExit(electronApp, index, exitCode = 0) {
+export async function emitPtyExit(electronApp: ElectronApplication, index: number, exitCode = 0) {
   await electronApp.evaluate(
     (_, { index: i, exitCode: c }) => global.__fakePtys.at(i).emitExit(c),
     { index, exitCode }
@@ -95,21 +97,21 @@ async function emitPtyExit(electronApp, index, exitCode = 0) {
 /**
  * フェイク pty に書き込まれた内容を取り出す。
  */
-async function writtenTo(electronApp, index) {
+export async function writtenTo(electronApp: ElectronApplication, index: number): Promise<string[]> {
   return electronApp.evaluate((_, i) => global.__fakePtys.at(i).written, index);
 }
 
 /**
  * 現在のセッション一覧をメインプロセスから直接取得する。
  */
-async function listSessions(electronApp) {
+export async function listSessions(electronApp: ElectronApplication): Promise<any[]> {
   return electronApp.evaluate(() => global.__sessionManager.list());
 }
 
 /**
  * dialog.showOpenDialog をディレクトリ選択のモックに差し替える。
  */
-async function mockOpenDialog(electronApp, filePaths) {
+export async function mockOpenDialog(electronApp: ElectronApplication, filePaths: string[]) {
   await electronApp.evaluate(({ dialog }, paths) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: paths });
   }, filePaths);
@@ -118,7 +120,7 @@ async function mockOpenDialog(electronApp, filePaths) {
 /**
  * dialog.showOpenDialog をキャンセルのモックに差し替える。
  */
-async function mockOpenDialogCancel(electronApp) {
+export async function mockOpenDialogCancel(electronApp: ElectronApplication) {
   await electronApp.evaluate(({ dialog }) => {
     dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
   });
@@ -127,7 +129,7 @@ async function mockOpenDialogCancel(electronApp) {
 /**
  * dialog.showSaveDialog を保存先固定のモックに差し替える。
  */
-async function mockSaveDialog(electronApp, filePath) {
+export async function mockSaveDialog(electronApp: ElectronApplication, filePath: string) {
   await electronApp.evaluate(({ dialog }, fp) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: fp });
   }, filePath);
@@ -136,7 +138,7 @@ async function mockSaveDialog(electronApp, filePath) {
 /**
  * dialog.showSaveDialog をキャンセルのモックに差し替える。
  */
-async function mockSaveDialogCancel(electronApp) {
+export async function mockSaveDialogCancel(electronApp: ElectronApplication) {
   await electronApp.evaluate(({ dialog }) => {
     dialog.showSaveDialog = async () => ({ canceled: true, filePath: "" });
   });
@@ -150,7 +152,7 @@ async function mockSaveDialogCancel(electronApp) {
  * ポーリングして追従するため、これを待たないと「前のテストの残骸ペイン」で
  * waitForPaneCount が即座に成立し、消える直前のペインを操作してしまう。
  */
-async function resetSessions(electronApp, page) {
+export async function resetSessions(electronApp: ElectronApplication, page?: Page) {
   await electronApp.evaluate(() => {
     global.__sessionManager.closeAll();
     global.__fakePtys = [];
@@ -165,7 +167,7 @@ async function resetSessions(electronApp, page) {
  * running / idle の切り替わりがテストごとにブレる。クロックを固定すれば
  * 状態遷移を決定的に検証できる。
  */
-async function useFakeClock(electronApp, start = 1000) {
+export async function useFakeClock(electronApp: ElectronApplication, start = 1000) {
   await electronApp.evaluate((_, t) => {
     global.__clock = t;
     global.__sessionManager.now = () => global.__clock;
@@ -175,7 +177,7 @@ async function useFakeClock(electronApp, start = 1000) {
 /**
  * 固定クロックを進める。
  */
-async function advanceClock(electronApp, ms) {
+export async function advanceClock(electronApp: ElectronApplication, ms: number) {
   await electronApp.evaluate((_, delta) => {
     global.__clock += delta;
   }, ms);
@@ -184,28 +186,9 @@ async function advanceClock(electronApp, ms) {
 /**
  * ペインが指定数になるまで待つ。
  */
-async function waitForPaneCount(page, count) {
+export async function waitForPaneCount(page: Page, count: number) {
   await page.waitForFunction(
     (expected) => document.querySelectorAll(".pane").length === expected,
     count
   );
 }
-
-module.exports = {
-  launchApp,
-  closeApp,
-  useFakePty,
-  createSession,
-  emitPtyData,
-  emitPtyExit,
-  writtenTo,
-  listSessions,
-  mockOpenDialog,
-  mockOpenDialogCancel,
-  mockSaveDialog,
-  mockSaveDialogCancel,
-  resetSessions,
-  useFakeClock,
-  advanceClock,
-  waitForPaneCount,
-};

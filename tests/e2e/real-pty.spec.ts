@@ -1,11 +1,11 @@
-const { test, expect } = require("@playwright/test");
-const path = require("path");
-const {
+﻿import { test, expect } from "@playwright/test";
+import path from "path";
+import {
   launchApp,
   closeApp,
   createSession,
   waitForPaneCount,
-} = require("./helpers/electron-app");
+} from "./helpers/electron-app";
 
 /**
  * このスイートだけはフェイクを使わず、実際に node-pty でプロセスを起動する。

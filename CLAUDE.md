@@ -53,8 +53,9 @@ node-pty + xterm.js。
 ## コマンド
 
 ```bash
-npm start          # アプリ起動
-npm test           # 型検査 + 全テスト（unit + e2e）
+npm start          # ビルドしてアプリ起動
+npm run build      # TypeScript を dist/ へコンパイル
+npm test           # 型検査 + ビルド + 全テスト（unit + e2e）
 npm run typecheck  # 型検査のみ（tsc --noEmit）
 npm run test:unit  # ロジック単体テストのみ（高速）
 npm run test:e2e   # Electron E2E テストのみ
@@ -62,27 +63,54 @@ npm run test:report  # HTML レポート表示
 npm run rebuild    # node-pty を Electron ABI 向けに再ビルド
 ```
 
-## 型検査（JS のまま TypeScript で検査する）
+## TypeScript
 
-`tsconfig.json` は `allowJs` + `checkJs` + `noEmit`。**JS は 1 バイトも生成しない。**
-ファイル名も実行時の挙動も変えずに型検査だけを受ける構成で、`npm test` の先頭で走る。
+ソースもテストも全て `.ts`。ビルド出力は `dist/` で、`package.json` の `main` は
+`dist/main.js` を指す。**`dist/` はコミットしない。**
 
-狙いは main ↔ preload ↔ renderer の境界。IPC は実行時の検査が無く、チャンネル名や
-ペイロードの形が食い違っても `undefined` が静かに流れるだけなので、そこを型で押さえる。
+### 3 つの tsconfig
 
-- 受け渡しの形は `types/panedeck.d.ts` に1つだけ置く。`Session` に項目を足すときは
-  ここを直せば、main / preload / renderer / workspace のどこで漏らしても検査で落ちる
+| ファイル | 役割 |
+|---|---|
+| `tsconfig.json` | 型検査のみ（`noEmit`）。renderer もテストも含めて全体を見る |
+| `tsconfig.build.json` | main / preload / lib を `dist/` へ出す |
+| `tsconfig.renderer.json` | renderer を `dist/` へ出す |
+
+renderer を分けているのは出力の性質が違うため。**`renderer.ts` は import を持たない
+「古典スクリプト」のままにしてある。** index.html が script タグで直接読み、CSP も
+`script-src 'self'` のまま変えずに済む。
+
+- 型の参照は `type X = import("./types/panedeck").X` の形にとどめる。
+  **値の import を 1 つでも書くとモジュール出力になり、この前提が崩れる**
+- `moduleDetection: "legacy"` が要る。既定の `"auto"` は node 系の module 設定だと
+  import の無いファイルもモジュール扱いにし、出力の先頭に `exports` への代入が
+  付いてブラウザで落ちる
+
+### 型の置き場
+
+- 層をまたぐ受け渡しの形は `types/panedeck.d.ts` に 1 つだけ。`Session` に項目を
+  足すときはここを直せば、main / preload / renderer / workspace のどこで漏らしても
+  検査で落ちる
 - `types/globals.d.ts` は `window.deck`、xterm のグローバル、E2E が仕込む
   `global.__sessionManager` などの宣言
-- JSDoc から型を参照するときは `/** @import * as Types from "../types/panedeck" */`
-- `strict` / `noImplicitAny` / `strictNullChecks` は意図的に緩めてある。JSDoc 主体の
-  コードでいきなり全部を厳格にすると、実害のある指摘が暗黙 any の山に埋もれるため
-- テストが**わざと不正な値を渡す**箇所（`onlyStatus: "nonsense"` など）は
-  `/** @type {any} */ (...)` で明示的に外す。「意図的な不正入力」だと読めるようにする
+- `preload.ts` は `DeckApi` として型を付ける。チャンネル名やペイロードを変えたとき、
+  preload と呼び出し側のどちらかだけ直し忘れると検査で落ちる
 
-**完全な `.ts` 化は #6（パッケージング）と同時に行う方針。** electron-builder を入れる
-時点でビルド工程が必要になるので、工程の導入を 2 回に分けない。それまでの穴はこの
-型検査で埋める。
+### 緩めてあるもの
+
+`strict` / `noImplicitAny` / `strictNullChecks` は意図的に off。段階的に上げる方針で、
+`strictNullChecks` を有効にするのは #6 の残り作業。有効にしたら
+`createSession` の戻り値を判別可能な union へ戻すこと（今は絞り込みが効かないため
+平坦な形にしてある）。
+
+テストが**わざと不正な値を渡す**箇所（`onlyStatus: "nonsense"` など）は `as any` で
+明示的に外す。「意図的な不正入力」だと読めるようにするため。
+
+### 移行で踏んだ落とし穴
+
+`status-detector.ts` の `ANSI_PATTERN` には**生の ESC バイトが直接埋まっていた**。
+ソース上で不可視なので書き写しで消え、`[Y/n]` を ANSI と誤認して削るようになった。
+制御文字は必ず `\x1b` のような escape で書くこと。
 
 ## プロジェクト構造
 

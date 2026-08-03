@@ -2,88 +2,71 @@
 // "Identifier 'deck' has already been declared" でスクリプト全体が落ちるため、別名にする
 const api = window.deck;
 
-/** @import * as Types from "./types/panedeck" */
+// このファイルは import を持たない「古典スクリプト」のままにする。index.html が
+// script タグで直接読み、CSP も script-src 'self' のままで済む。型の参照は
+// import(...) 形式にとどめる（値の import を書くとモジュール化して壊れる）。
+type Session = import("./types/panedeck").Session;
+type SessionStatus = import("./types/panedeck").SessionStatus;
 
 /**
  * 1 ペイン分の持ち物。
  *
  * `status` はメインプロセスから来た最新の状態の写し。送信先の件数表示に使う
  * （実際の絞り込みはメイン側で行うので、ここは表示専用）。
- *
- * @typedef {object} Pane
- * @property {string} id
- * @property {HTMLElement} el
- * @property {InstanceType<typeof Terminal>} term
- * @property {InstanceType<FitAddonNS["FitAddon"]>} fitAddon
- * @property {HTMLElement} statusEl
- * @property {HTMLElement} titleEl
- * @property {HTMLInputElement} selectEl
- * @property {Types.SessionStatus} status
  */
+interface Pane {
+  id: string;
+  el: HTMLElement;
+  term: InstanceType<typeof Terminal>;
+  fitAddon: InstanceType<(typeof FitAddon)["FitAddon"]>;
+  statusEl: HTMLElement;
+  titleEl: HTMLElement;
+  selectEl: HTMLInputElement;
+  status: SessionStatus;
+}
 
-/** @typedef {typeof FitAddon} FitAddonNS */
-
-const grid = document.getElementById("grid");
-const emptyState = document.getElementById("empty-state");
-const sessionCountEl = document.getElementById("session-count");
-const broadcastTargetEl = document.getElementById("broadcast-target");
-const messageEl = document.getElementById("message");
+const grid = document.getElementById("grid")!;
+const emptyState = document.getElementById("empty-state")!;
+const sessionCountEl = document.getElementById("session-count")!;
+const broadcastTargetEl = document.getElementById("broadcast-target")!;
+const messageEl = document.getElementById("message")!;
 
 // 値を読み書きする入力要素は具体的な型まで絞る
-const broadcastInput = /** @type {HTMLInputElement} */ (
-  document.getElementById("broadcast-input")
-);
-const waitingOnlyEl = /** @type {HTMLInputElement} */ (
-  document.getElementById("waiting-only")
-);
-const launchCommandInput = /** @type {HTMLInputElement} */ (
-  document.getElementById("launch-command")
-);
-const agentSelectEl = /** @type {HTMLSelectElement} */ (
-  document.getElementById("agent-select")
-);
-const fontSizeInput = /** @type {HTMLInputElement} */ (
-  document.getElementById("font-size")
-);
-const columnsSelectEl = /** @type {HTMLSelectElement} */ (
-  document.getElementById("columns")
-);
-const autoRestoreEl = /** @type {HTMLInputElement} */ (
-  document.getElementById("auto-restore")
-);
-const autoLogEl = /** @type {HTMLInputElement} */ (
-  document.getElementById("auto-log")
-);
+const broadcastInput = document.getElementById("broadcast-input") as HTMLInputElement;
+const waitingOnlyEl = document.getElementById("waiting-only") as HTMLInputElement;
+const launchCommandInput = document.getElementById(
+  "launch-command"
+) as HTMLInputElement;
+const agentSelectEl = document.getElementById("agent-select") as HTMLSelectElement;
+const fontSizeInput = document.getElementById("font-size") as HTMLInputElement;
+const columnsSelectEl = document.getElementById("columns") as HTMLSelectElement;
+const autoRestoreEl = document.getElementById("auto-restore") as HTMLInputElement;
+const autoLogEl = document.getElementById("auto-log") as HTMLInputElement;
 
-/** @type {Map<string, Pane>} セッション id → ペイン */
-const panes = new Map();
+/** セッション id → ペイン */
+const panes = new Map<string, Pane>();
 
 /**
- * @type {Set<string>} createPane が進行中のセッション id
+ * createPane が進行中のセッション id。
  *
  * createPane は panes へ登録する前に log:get を await するため、その間に
  * 同期ポーリングが再入すると「まだ panes に無い」と判定して同じセッションの
  * ペインを二重に作る。先に作られた DOM は panes から参照されなくなり、
  * 状態も出力も届かず × でも閉じられない幽霊ペインとして残る。
  */
-const creating = new Set();
+const creating = new Set<string>();
 
-/** @type {string|null} */
-let focusedId = null;
+let focusedId: string | null = null;
 
-/** @type {Record<Types.SessionStatus, string>} */
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<SessionStatus, string> = {
   running: "実行中",
   waiting: "入力待ち",
   idle: "待機",
   exited: "終了",
 };
 
-/**
- * 「入力待ちのみ」で絞るときの状態
- * @type {Types.SessionStatus}
- */
-const WAITING = "waiting";
+/** 「入力待ちのみ」で絞るときの状態 */
+const WAITING: SessionStatus = "waiting";
 
 /**
  * 端末の文字サイズ。メインプロセスの設定を写したもの。
@@ -95,7 +78,7 @@ const WAITING = "waiting";
 let fontSize = 12;
 
 /** 並べ替えでいま掴んでいるセッション id */
-let draggingId = null;
+let draggingId: string | null = null;
 
 /**
  * ツールバーに通知を出す。
@@ -103,13 +86,13 @@ let draggingId = null;
  * window.alert はネイティブモーダルを開いてしまい、E2E テストも実操作も
  * 止めてしまうため使わない。
  */
-function showMessage(text, { error = false } = {}) {
+function showMessage(text: string, { error = false }: { error?: boolean } = {}) {
   messageEl.textContent = text;
   messageEl.classList.toggle("info", !error);
 }
 
 /** 特殊キーのエスケープシーケンス */
-const KEY_SEQUENCES = {
+const KEY_SEQUENCES: Record<string, string> = {
   enter: "\r",
   esc: "\x1b",
   "ctrl-c": "\x03",
@@ -119,11 +102,7 @@ const KEY_SEQUENCES = {
 
 // ---------------------------------------------------------------- ペイン生成
 
-/**
- * @param {Types.Session} session
- * @returns {Promise<Pane>}
- */
-async function createPane(session) {
+async function createPane(session: Session): Promise<Pane> {
   const el = document.createElement("div");
   el.className = "pane";
   el.dataset.sessionId = session.id;
@@ -141,14 +120,12 @@ async function createPane(session) {
     <div class="pane-body"></div>
   `;
 
-  const titleEl = /** @type {HTMLElement} */ (el.querySelector(".pane-title"));
-  const cwdEl = /** @type {HTMLElement} */ (el.querySelector(".pane-cwd"));
-  const commandEl = /** @type {HTMLElement} */ (el.querySelector(".pane-command"));
-  const statusEl = /** @type {HTMLElement} */ (el.querySelector(".pane-status"));
-  const selectEl = /** @type {HTMLInputElement} */ (
-    el.querySelector(".pane-select")
-  );
-  const body = /** @type {HTMLElement} */ (el.querySelector(".pane-body"));
+  const titleEl = el.querySelector(".pane-title") as HTMLElement;
+  const cwdEl = el.querySelector(".pane-cwd") as HTMLElement;
+  const commandEl = el.querySelector(".pane-command") as HTMLElement;
+  const statusEl = el.querySelector(".pane-status") as HTMLElement;
+  const selectEl = el.querySelector(".pane-select") as HTMLInputElement;
+  const body = el.querySelector(".pane-body") as HTMLElement;
 
   titleEl.textContent = session.title;
   cwdEl.textContent = session.cwd || "";
@@ -175,8 +152,7 @@ async function createPane(session) {
   term.open(body);
   if (backlog) term.write(backlog);
 
-  /** @type {Pane} */
-  const pane = {
+  const pane: Pane = {
     id: session.id,
     el,
     term,
@@ -219,20 +195,17 @@ async function createPane(session) {
  *
  * 掴む場所をヘッダに限るのは、端末の上でドラッグを始めると文字の選択が
  * できなくなるため。
- *
- * @param {HTMLElement} el
- * @param {string} id
  */
-function setupDragAndDrop(el, id) {
-  const header = /** @type {HTMLElement} */ (el.querySelector(".pane-header"));
+function setupDragAndDrop(el: HTMLElement, id: string) {
+  const header = el.querySelector(".pane-header") as HTMLElement;
   header.draggable = true;
 
   header.addEventListener("dragstart", (event) => {
     draggingId = id;
     el.classList.add("dragging");
-    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer!.effectAllowed = "move";
     // 一部の環境ではデータを載せないとドラッグが始まらない
-    event.dataTransfer.setData("text/plain", id);
+    event.dataTransfer!.setData("text/plain", id);
   });
 
   header.addEventListener("dragend", () => {
@@ -244,7 +217,7 @@ function setupDragAndDrop(el, id) {
   el.addEventListener("dragover", (event) => {
     if (!draggingId || draggingId === id) return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
+    event.dataTransfer!.dropEffect = "move";
 
     // 掴んでいるものを、このペインの前に置くか後ろに置くか
     const rect = el.getBoundingClientRect();
@@ -274,9 +247,9 @@ function clearDropMarks() {
 }
 
 /** 画面に並んでいる順のセッション id */
-function currentOrder() {
-  return [...grid.querySelectorAll(".pane")].map(
-    (el) => /** @type {HTMLElement} */ (el).dataset.sessionId
+function currentOrder(): string[] {
+  return [...grid.querySelectorAll<HTMLElement>(".pane")].map(
+    (el) => el.dataset.sessionId!
   );
 }
 
@@ -285,12 +258,8 @@ function currentOrder() {
  *
  * 並び順の持ち主はメインプロセスなので、ここでは新しい順を組み立てて渡すだけ。
  * DOM を先に動かすと、次の同期でメイン側の順に戻されてちらつく。
- *
- * @param {string} movedId
- * @param {string} targetId
- * @param {boolean} before
  */
-async function moveSession(movedId, targetId, before) {
+async function moveSession(movedId: string, targetId: string, before: boolean) {
   if (!movedId || movedId === targetId) return;
 
   const order = currentOrder().filter((id) => id !== movedId);
@@ -303,8 +272,7 @@ async function moveSession(movedId, targetId, before) {
   await sync();
 }
 
-/** @param {string} id */
-function removePane(id) {
+function removePane(id: string) {
   const pane = panes.get(id);
   if (!pane) return;
   pane.term.dispose();
@@ -313,8 +281,7 @@ function removePane(id) {
   if (focusedId === id) focusedId = null;
 }
 
-/** @param {Pane} pane */
-function fit(pane) {
+function fit(pane: Pane) {
   try {
     pane.fitAddon.fit();
     api.resize(pane.id, pane.term.cols, pane.term.rows);
@@ -323,8 +290,7 @@ function fit(pane) {
   }
 }
 
-/** @param {string} id */
-function setFocused(id) {
+function setFocused(id: string) {
   focusedId = id;
   panes.forEach((pane, paneId) => {
     pane.el.classList.toggle("focused", paneId === id);
@@ -381,13 +347,11 @@ async function sync() {
  * 既にある DOM を動かすだけで、ペインも端末も作り直さない（pty との接続が
  * 切れない）。並びが同じときは何もしない。同期は 300ms ごとに走るので、
  * 毎回動かすと端末の描画が飛び続ける。
- *
- * @param {Types.Session[]} sessions
  */
-function applyOrder(sessions) {
+function applyOrder(sessions: Session[]) {
   const desired = sessions
     .map((session) => panes.get(session.id)?.el)
-    .filter(Boolean);
+    .filter(Boolean) as HTMLElement[];
   const current = [...grid.querySelectorAll(".pane")];
 
   const same =
@@ -659,14 +623,12 @@ autoLogEl.addEventListener("change", commitAutoLog);
 
 columnsSelectEl.addEventListener("change", commitColumns);
 
-const keyButtons = /** @type {NodeListOf<HTMLElement>} */ (
-  document.querySelectorAll("#keys button")
-);
+const keyButtons = document.querySelectorAll<HTMLElement>("#keys button");
 keyButtons.forEach((button) => {
-  button.addEventListener("click", () => sendKey(button.dataset.key));
+  button.addEventListener("click", () => sendKey(button.dataset.key!));
 });
 
-document.getElementById("close-all").addEventListener("click", async () => {
+document.getElementById("close-all")!.addEventListener("click", async () => {
   await api.closeAllSessions();
   await sync();
 });

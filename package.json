@@ -6,7 +6,7 @@
   "license": "ISC",
   "scripts": {
     "start": "npm run build && electron .",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.renderer.json",
     "typecheck": "tsc --noEmit",
     "test": "npm run typecheck && npm run build && npx playwright test",
     "test:unit": "npx playwright test --project=unit",

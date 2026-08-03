@@ -1,20 +1,22 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
-const path = require("path");
-const fs = require("fs");
-const os = require("os");
-const pty = require("node-pty");
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import path from "path";
+import fs from "fs";
+import os from "os";
+import * as pty from "node-pty";
 
-const { SessionManager } = require("./lib/session-manager");
-const {
-  saveWorkspace,
-  loadWorkspace,
-  tryLoadWorkspace,
-} = require("./lib/workspace");
-const { listProfiles } = require("./lib/agent-profiles");
-const { readSettings, updateSettings } = require("./lib/settings");
-const { LogWriter } = require("./lib/log-writer");
+import type {
+  CreateSessionOptions,
+  Pty,
+  PtyFactoryOptions,
+  Settings,
+} from "./types/panedeck";
+import { SessionManager } from "./lib/session-manager";
+import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace";
+import { listProfiles } from "./lib/agent-profiles";
+import { readSettings, updateSettings } from "./lib/settings";
+import { LogWriter, type LogFailure } from "./lib/log-writer";
 
-let mainWindow;
+let mainWindow: BrowserWindow | null = null;
 
 /**
  * 設定ファイルの場所。
@@ -23,7 +25,7 @@ let mainWindow;
  * 設定を読むので、起動後に注入する方式では初回の読み込みに間に合わない。
  * また、アプリを再起動するテストでも同じ場所を指し続けられる。
  */
-function settingsPath() {
+function settingsPath(): string {
   return (
     process.env.PANEDECK_SETTINGS_PATH ||
     path.join(app.getPath("userData"), "settings.json")
@@ -37,23 +39,20 @@ function settingsPath() {
  * userData を汚さない。ユーザーが明示的に保存するワークスペースとは別物で、
  * こちらはセッションの増減のたびに黙って上書きされる。
  */
-function autoRestorePath() {
+function autoRestorePath(): string {
   return path.join(path.dirname(settingsPath()), "last-session.json");
 }
 
 /** ログの出力先。設定が空なら設定ファイルと同じ場所の logs/ */
-function logDir() {
+function logDir(): string {
   return (
     readSettings(settingsPath()).logDir ||
     path.join(path.dirname(settingsPath()), "logs")
   );
 }
 
-/**
- * ログの自動保存。無効なときは null。
- * @type {InstanceType<typeof LogWriter>|null}
- */
-let logWriter = null;
+/** ログの自動保存。無効なときは null。 */
+let logWriter: LogWriter | null = null;
 
 /** 溜まった出力を書き出す間隔 (ms) */
 const LOG_FLUSH_MS = 300;
@@ -64,14 +63,14 @@ const LOG_FLUSH_MS = 300;
  * LogWriter 側で失敗したセッションは書き込みを諦めるので、通知は
  * セッションごとに一度きりになる。
  */
-function reportLogFailures(failures) {
+function reportLogFailures(failures: LogFailure[]): void {
   for (const failure of failures) {
     sendToRenderer("log:error", failure);
   }
 }
 
 /** 設定に合わせてログの自動保存を開始・停止する。 */
-function applyLogSettings() {
+function applyLogSettings(): void {
   const settings = readSettings(settingsPath());
 
   if (!settings.autoLog) {
@@ -97,7 +96,7 @@ function applyLogSettings() {
  * セッションの生成や終了そのものを失敗させるべきではない。明示的な
  * 「構成を保存」は従来どおり失敗を呼び出し側へ返す。
  */
-function persistSessions() {
+function persistSessions(): void {
   try {
     saveWorkspace(autoRestorePath(), sessionManager.list(), {
       name: "last-session",
@@ -113,7 +112,7 @@ function persistSessions() {
  * 設定で無効なら何もしない。ファイルが無い・壊れているときも黙って諦める
  * （初回起動では必ず「無い」を通る）。
  */
-function restoreLastSession() {
+function restoreLastSession(): void {
   if (!readSettings(settingsPath()).autoRestore) return;
 
   const workspace = tryLoadWorkspace(autoRestorePath());
@@ -129,7 +128,7 @@ function restoreLastSession() {
 }
 
 /** OS 既定のシェル */
-function defaultShell() {
+function defaultShell(): string {
   if (process.platform === "win32") return "powershell.exe";
   return process.env.SHELL || "bash";
 }
@@ -138,22 +137,22 @@ function defaultShell() {
  * node-pty でプロセスを起動する。SessionManager にはこの関数だけを渡すので、
  * テストではフェイクに差し替えられる。
  */
-function realPtyFactory({ shell, args, cwd, cols, rows, env }) {
+function realPtyFactory({ shell, args, cwd, cols, rows, env }: PtyFactoryOptions): Pty {
   return pty.spawn(shell || defaultShell(), args || [], {
     name: "xterm-color",
     cols: cols || 80,
     rows: rows || 24,
     cwd: cwd || os.homedir(),
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...env } as Record<string, string>,
   });
 }
 
 const sessionManager = new SessionManager({ ptyFactory: realPtyFactory });
 
 // E2E テストから ptyFactory を差し替えられるように公開する
-global.__sessionManager = sessionManager;
+globalThis.__sessionManager = sessionManager;
 
-function sendToRenderer(channel, payload) {
+function sendToRenderer(channel: string, payload: unknown): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
   }
@@ -168,7 +167,7 @@ sessionManager.onExit((id, exitCode) =>
   sendToRenderer("session:exit", { id, exitCode })
 );
 
-function createWindow() {
+function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -209,9 +208,14 @@ app.on("will-quit", () => {
   sessionManager.closeAll();
 });
 
+/** ダイアログの親。まだウィンドウが無い場面では渡さない */
+function parentWindow(): BrowserWindow {
+  return mainWindow!;
+}
+
 // --- セッション ---
 
-ipcMain.handle("session:create", (_, options = {}) => {
+ipcMain.handle("session:create", (_, options: CreateSessionOptions = {}) => {
   try {
     const session = sessionManager.create({
       cwd: options.cwd,
@@ -231,7 +235,7 @@ ipcMain.handle("session:create", (_, options = {}) => {
     persistSessions();
     return { ok: true, session };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
   }
 });
 
@@ -240,7 +244,7 @@ ipcMain.handle("session:list", () => sessionManager.list());
 // 判定に使う正規表現は含まない（IPC に載らないため）。判定はメイン側で行う
 ipcMain.handle("agent:list", () => listProfiles());
 
-ipcMain.handle("session:close", (_, id) => {
+ipcMain.handle("session:close", (_, id: string) => {
   if (logWriter) reportLogFailures(logWriter.close(id));
   const closed = sessionManager.close(id);
   persistSessions();
@@ -254,7 +258,7 @@ ipcMain.handle("session:closeAll", () => {
   return count;
 });
 
-ipcMain.handle("session:reorder", (_, ids) => {
+ipcMain.handle("session:reorder", (_, ids: string[]) => {
   const ordered = sessionManager.reorder(ids);
   persistSessions();
   return ordered;
@@ -273,7 +277,7 @@ ipcMain.on("session:resize", (_, { id, cols, rows }) => {
 });
 
 ipcMain.handle("session:pickDirectory", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await dialog.showOpenDialog(parentWindow(), {
     title: "セッションを起動するディレクトリを選択",
     properties: ["openDirectory"],
   });
@@ -285,7 +289,7 @@ ipcMain.handle("session:pickDirectory", async () => {
 
 ipcMain.handle("settings:get", () => readSettings(settingsPath()));
 
-ipcMain.handle("settings:set", (_, settings) => {
+ipcMain.handle("settings:set", (_, settings: Partial<Settings>) => {
   try {
     // 変更された項目だけが送られてくるので重ねて書く。
     // 書けた値をそのまま返し、レンダラは丸められた後の値を表示に使う
@@ -293,19 +297,19 @@ ipcMain.handle("settings:set", (_, settings) => {
     applyLogSettings();
     return { ok: true, settings: saved };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
   }
 });
 
 // --- ログ ---
 
-ipcMain.handle("log:get", (_, id) => sessionManager.getLog(id));
+ipcMain.handle("log:get", (_, id: string) => sessionManager.getLog(id));
 
-ipcMain.handle("log:save", async (_, id) => {
+ipcMain.handle("log:save", async (_, id: string) => {
   const session = sessionManager.get(id);
   if (!session) return { ok: false, error: "セッションが見つかりません" };
 
-  const result = await dialog.showSaveDialog(mainWindow, {
+  const result = await dialog.showSaveDialog(parentWindow(), {
     title: "出力ログを保存",
     defaultPath: `${session.title}.log`,
     filters: [{ name: "Log", extensions: ["log", "txt"] }],
@@ -316,14 +320,14 @@ ipcMain.handle("log:save", async (_, id) => {
     fs.writeFileSync(result.filePath, sessionManager.getLog(id), "utf8");
     return { ok: true, filePath: result.filePath };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
   }
 });
 
 // --- ワークスペース ---
 
-ipcMain.handle("workspace:save", async (_, name) => {
-  const result = await dialog.showSaveDialog(mainWindow, {
+ipcMain.handle("workspace:save", async (_, name: string) => {
+  const result = await dialog.showSaveDialog(parentWindow(), {
     title: "セッション構成を保存",
     defaultPath: "panedeck-workspace.json",
     filters: [{ name: "Workspace", extensions: ["json"] }],
@@ -334,36 +338,39 @@ ipcMain.handle("workspace:save", async (_, name) => {
     saveWorkspace(result.filePath, sessionManager.list(), { name });
     return { ok: true, filePath: result.filePath };
   } catch (err) {
-    return { ok: false, error: err.message };
+    return { ok: false, error: (err as Error).message };
   }
 });
 
-ipcMain.handle("workspace:restore", async (_, options = {}) => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: "セッション構成を復元",
-    properties: ["openFile"],
-    filters: [{ name: "Workspace", extensions: ["json"] }],
-  });
-  if (result.canceled || result.filePaths.length === 0) {
-    return { ok: false, canceled: true };
-  }
+ipcMain.handle(
+  "workspace:restore",
+  async (_, options: { initialCommand?: string; agent?: string } = {}) => {
+    const result = await dialog.showOpenDialog(parentWindow(), {
+      title: "セッション構成を復元",
+      properties: ["openFile"],
+      filters: [{ name: "Workspace", extensions: ["json"] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, canceled: true };
+    }
 
-  try {
-    const workspace = loadWorkspace(result.filePaths[0]);
-    const created = workspace.sessions.map((entry) =>
-      sessionManager.create({
-        ...entry,
-        // セッションごとの値を優先し、持たないものはツールバーの値で補う。
-        // 起動コマンドを持たない既存のワークスペースでも今までどおり動く
-        initialCommand: entry.initialCommand || options.initialCommand,
-        agent: entry.agent || options.agent,
-      })
-    );
-    for (const session of created) logWriter?.open(session.id, session.title);
+    try {
+      const workspace = loadWorkspace(result.filePaths[0]);
+      const created = workspace.sessions.map((entry) =>
+        sessionManager.create({
+          ...entry,
+          // セッションごとの値を優先し、持たないものはツールバーの値で補う。
+          // 起動コマンドを持たない既存のワークスペースでも今までどおり動く
+          initialCommand: entry.initialCommand || options.initialCommand,
+          agent: entry.agent || options.agent,
+        })
+      );
+      for (const session of created) logWriter?.open(session.id, session.title);
 
-    persistSessions();
-    return { ok: true, name: workspace.name, sessions: created };
-  } catch (err) {
-    return { ok: false, error: err.message };
+      persistSessions();
+      return { ok: true, name: workspace.name, sessions: created };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
   }
-});
+);

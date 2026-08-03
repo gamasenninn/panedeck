@@ -26,6 +26,7 @@ declare global {
    * `electronApp.evaluate()` の中で参照するため、テストからは通常のコードとして
    * 型検査される。実体はテストヘルパーが差し込む。
    */
+  // eslint-disable-next-line no-var
   var __sessionManager: any;
   var __fakePtys: any[];
   var __clock: number;
