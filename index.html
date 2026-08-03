@@ -218,6 +218,28 @@
         border-color: #58a6ff;
       }
 
+      /* 並べ替え中のペインと、落とし先の目印 */
+      .pane.dragging {
+        opacity: 0.45;
+      }
+
+      .pane.drop-before {
+        box-shadow: inset 3px 0 0 #58a6ff;
+      }
+
+      .pane.drop-after {
+        box-shadow: inset -3px 0 0 #58a6ff;
+      }
+
+      /* ヘッダを掴んで動かす。端末の上でのドラッグは選択の邪魔になる */
+      .pane-header {
+        cursor: grab;
+      }
+
+      .pane.dragging .pane-header {
+        cursor: grabbing;
+      }
+
       .pane-header {
         display: flex;
         align-items: center;
@@ -372,6 +394,19 @@
       </button>
 
       <div class="divider"></div>
+
+      <div class="field">
+        <label for="columns">列</label>
+        <select id="columns" data-testid="columns">
+          <option value="0">自動</option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+        </select>
+      </div>
 
       <div class="field">
         <label for="font-size">文字</label>

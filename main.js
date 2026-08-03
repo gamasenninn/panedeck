@@ -253,6 +253,12 @@ ipcMain.handle("session:closeAll", () => {
   return count;
 });
 
+ipcMain.handle("session:reorder", (_, ids) => {
+  const ordered = sessionManager.reorder(ids);
+  persistSessions();
+  return ordered;
+});
+
 ipcMain.handle("session:broadcast", (_, { data, ids, options }) =>
   sessionManager.broadcast(data, ids, options)
 );

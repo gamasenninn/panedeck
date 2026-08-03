@@ -5,6 +5,7 @@ const {
   DEFAULT_SETTINGS,
   FONT_SIZE_MIN,
   FONT_SIZE_MAX,
+  COLUMNS_MAX,
   normalizeSettings,
   readSettings,
   writeSettings,
@@ -67,10 +68,39 @@ test.describe("normalizeSettings", () => {
     expect(Object.keys(settings).sort()).toEqual([
       "autoLog",
       "autoRestore",
+      "columns",
       "fontSize",
       "logDir",
       "logStripAnsi",
     ]);
+  });
+});
+
+test.describe("normalizeSettings - 列数", () => {
+  test("既定は 0（自動）", () => {
+    // 0 は「幅に合わせて自動で折り返す」現行の見た目
+    expect(DEFAULT_SETTINGS.columns).toBe(0);
+    expect(normalizeSettings({}).columns).toBe(0);
+  });
+
+  test("1 以上の指定はそのまま通す", () => {
+    expect(normalizeSettings({ columns: 1 }).columns).toBe(1);
+    expect(normalizeSettings({ columns: 4 }).columns).toBe(4);
+  });
+
+  test("範囲外は端に丸める", () => {
+    expect(normalizeSettings({ columns: -3 }).columns).toBe(0);
+    expect(normalizeSettings({ columns: 99 }).columns).toBe(COLUMNS_MAX);
+  });
+
+  test("数値として読めない値は自動にする", () => {
+    for (const bogus of ["abc", null, {}, []]) {
+      expect(normalizeSettings({ columns: bogus }).columns).toBe(0);
+    }
+  });
+
+  test("数字の文字列は受け入れる（選択欄からは文字列で来る）", () => {
+    expect(normalizeSettings({ columns: "3" }).columns).toBe(3);
   });
 });
 

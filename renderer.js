@@ -45,6 +45,9 @@ const agentSelectEl = /** @type {HTMLSelectElement} */ (
 const fontSizeInput = /** @type {HTMLInputElement} */ (
   document.getElementById("font-size")
 );
+const columnsSelectEl = /** @type {HTMLSelectElement} */ (
+  document.getElementById("columns")
+);
 const autoRestoreEl = /** @type {HTMLInputElement} */ (
   document.getElementById("auto-restore")
 );
@@ -90,6 +93,9 @@ const WAITING = "waiting";
  * 書き戻ってきた値を受け取るだけにする。規則を二重に持たない。
  */
 let fontSize = 12;
+
+/** 並べ替えでいま掴んでいるセッション id */
+let draggingId = null;
 
 /**
  * ツールバーに通知を出す。
@@ -201,9 +207,100 @@ async function createPane(session) {
     await api.saveLog(session.id);
   });
 
+  setupDragAndDrop(el, session.id);
+
   new ResizeObserver(() => fit(pane)).observe(body);
 
   return pane;
+}
+
+/**
+ * ヘッダを掴んでペインを並べ替える。
+ *
+ * 掴む場所をヘッダに限るのは、端末の上でドラッグを始めると文字の選択が
+ * できなくなるため。
+ *
+ * @param {HTMLElement} el
+ * @param {string} id
+ */
+function setupDragAndDrop(el, id) {
+  const header = /** @type {HTMLElement} */ (el.querySelector(".pane-header"));
+  header.draggable = true;
+
+  header.addEventListener("dragstart", (event) => {
+    draggingId = id;
+    el.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    // 一部の環境ではデータを載せないとドラッグが始まらない
+    event.dataTransfer.setData("text/plain", id);
+  });
+
+  header.addEventListener("dragend", () => {
+    draggingId = null;
+    el.classList.remove("dragging");
+    clearDropMarks();
+  });
+
+  el.addEventListener("dragover", (event) => {
+    if (!draggingId || draggingId === id) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+
+    // 掴んでいるものを、このペインの前に置くか後ろに置くか
+    const rect = el.getBoundingClientRect();
+    const before = event.clientX < rect.left + rect.width / 2;
+    clearDropMarks();
+    el.classList.toggle("drop-before", before);
+    el.classList.toggle("drop-after", !before);
+  });
+
+  el.addEventListener("drop", async (event) => {
+    if (!draggingId || draggingId === id) return;
+    event.preventDefault();
+
+    const before = el.classList.contains("drop-before");
+    const moved = draggingId;
+    draggingId = null;
+    clearDropMarks();
+
+    await moveSession(moved, id, before);
+  });
+}
+
+function clearDropMarks() {
+  panes.forEach((pane) => {
+    pane.el.classList.remove("drop-before", "drop-after");
+  });
+}
+
+/** 画面に並んでいる順のセッション id */
+function currentOrder() {
+  return [...grid.querySelectorAll(".pane")].map(
+    (el) => /** @type {HTMLElement} */ (el).dataset.sessionId
+  );
+}
+
+/**
+ * 1 つのペインを別のペインの前後へ移す。
+ *
+ * 並び順の持ち主はメインプロセスなので、ここでは新しい順を組み立てて渡すだけ。
+ * DOM を先に動かすと、次の同期でメイン側の順に戻されてちらつく。
+ *
+ * @param {string} movedId
+ * @param {string} targetId
+ * @param {boolean} before
+ */
+async function moveSession(movedId, targetId, before) {
+  if (!movedId || movedId === targetId) return;
+
+  const order = currentOrder().filter((id) => id !== movedId);
+  const at = order.indexOf(targetId);
+  if (at === -1) return;
+
+  order.splice(before ? at : at + 1, 0, movedId);
+
+  await api.reorderSessions(order);
+  await sync();
 }
 
 /** @param {string} id */
@@ -269,11 +366,39 @@ async function sync() {
     }
   }
 
+  applyOrder(sessions);
+
   const count = sessions.length;
   sessionCountEl.textContent = `${count} セッション`;
   grid.classList.toggle("empty", count === 0);
   emptyState.style.display = count === 0 ? "" : "none";
   updateBroadcastTarget();
+}
+
+/**
+ * 画面上のペインをメインプロセスの並び順に合わせる。
+ *
+ * 既にある DOM を動かすだけで、ペインも端末も作り直さない（pty との接続が
+ * 切れない）。並びが同じときは何もしない。同期は 300ms ごとに走るので、
+ * 毎回動かすと端末の描画が飛び続ける。
+ *
+ * @param {Types.Session[]} sessions
+ */
+function applyOrder(sessions) {
+  const desired = sessions
+    .map((session) => panes.get(session.id)?.el)
+    .filter(Boolean);
+  const current = [...grid.querySelectorAll(".pane")];
+
+  const same =
+    desired.length === current.length &&
+    desired.every((el, i) => el === current[i]);
+  if (same) return;
+
+  for (const el of desired) grid.appendChild(el);
+
+  // 付け替えで端末の描画が飛ぶことがあるので測り直す
+  panes.forEach(fit);
 }
 
 function selectedPanes() {
@@ -434,10 +559,36 @@ async function commitAutoLog() {
   );
 }
 
+/**
+ * グリッドの列数を反映する。
+ *
+ * 0 は「幅に合わせて自動で折り返す」で、その場合は CSS の既定に戻す。
+ *
+ * @param {number} columns
+ */
+function applyColumns(columns) {
+  columnsSelectEl.value = String(columns);
+  grid.style.gridTemplateColumns =
+    columns > 0 ? `repeat(${columns}, minmax(0, 1fr))` : "";
+
+  panes.forEach(fit);
+}
+
+async function commitColumns() {
+  const result = await api.setSettings({ columns: Number(columnsSelectEl.value) });
+  if (!result.ok) {
+    showMessage(`設定を保存できません: ${result.error}`, { error: true });
+    return;
+  }
+
+  applyColumns(result.settings.columns);
+}
+
 /** 起動時に保存済みの設定を読み込む。 */
 async function loadSettings() {
   const settings = await api.getSettings();
   applyFontSize(settings.fontSize);
+  applyColumns(settings.columns);
   autoRestoreEl.checked = settings.autoRestore;
   autoLogEl.checked = settings.autoLog;
 }
@@ -505,6 +656,8 @@ fontSizeInput.addEventListener("change", commitFontSize);
 autoRestoreEl.addEventListener("change", commitAutoRestore);
 
 autoLogEl.addEventListener("change", commitAutoLog);
+
+columnsSelectEl.addEventListener("change", commitColumns);
 
 const keyButtons = /** @type {NodeListOf<HTMLElement>} */ (
   document.querySelectorAll("#keys button")

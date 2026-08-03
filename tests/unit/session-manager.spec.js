@@ -318,6 +318,89 @@ test.describe("状態の算出", () => {
   });
 });
 
+test.describe("並べ替え", () => {
+  function setupThree() {
+    const { manager, ptyFactory, now } = setup();
+    const a = manager.create({ cwd: "a", title: "A" });
+    const b = manager.create({ cwd: "b", title: "B" });
+    const c = manager.create({ cwd: "c", title: "C" });
+    return { manager, ptyFactory, now, a, b, c };
+  }
+
+  const titles = (manager) => manager.list().map((s) => s.title);
+
+  test("指定した順に並べ替える", () => {
+    const { manager, a, b, c } = setupThree();
+    manager.reorder([c.id, a.id, b.id]);
+
+    expect(titles(manager)).toEqual(["C", "A", "B"]);
+  });
+
+  test("含まれない id は末尾に残る（相対順は保つ）", () => {
+    // 並べ替え中にセッションが増えても、そのぶんが消えない
+    const { manager, a, c } = setupThree();
+    manager.reorder([c.id, a.id]);
+
+    expect(titles(manager)).toEqual(["C", "A", "B"]);
+  });
+
+  test("存在しない id は無視する", () => {
+    const { manager, a, b, c } = setupThree();
+    manager.reorder([c.id, "nonexistent", a.id, b.id]);
+
+    expect(titles(manager)).toEqual(["C", "A", "B"]);
+  });
+
+  test("重複した id は最初の 1 つだけ使う", () => {
+    const { manager, a, b, c } = setupThree();
+    manager.reorder([c.id, c.id, a.id, b.id]);
+
+    expect(titles(manager)).toEqual(["C", "A", "B"]);
+  });
+
+  test("空配列なら並びは変わらない", () => {
+    const { manager } = setupThree();
+    manager.reorder([]);
+
+    expect(titles(manager)).toEqual(["A", "B", "C"]);
+  });
+
+  test("引数が配列でなくても落ちない", () => {
+    const { manager } = setupThree();
+    expect(() => manager.reorder(/** @type {any} */ ("nope"))).not.toThrow();
+    expect(titles(manager)).toEqual(["A", "B", "C"]);
+  });
+
+  test("並べ替えてもセッションの中身は保たれる", () => {
+    // ペインを作り直さずに並べ替えたいので、pty もログも同じものが残る必要がある
+    const { manager, ptyFactory, a, b, c } = setupThree();
+    ptyFactory.created[0].emitData("AAA");
+    const ptyBefore = manager.sessions.get(a.id).pty;
+
+    manager.reorder([c.id, b.id, a.id]);
+
+    expect(manager.getLog(a.id)).toBe("AAA");
+    expect(manager.sessions.get(a.id).pty).toBe(ptyBefore);
+    expect(manager.write(a.id, "x")).toBe(true);
+  });
+
+  test("並べ替えた順で書き込み対象が決まる", () => {
+    const { manager, ptyFactory, a, b, c } = setupThree();
+    manager.reorder([c.id, b.id, a.id]);
+    manager.broadcast("hello");
+
+    // pty の生成順は変わらないので、中身で対応を確かめる
+    expect(ptyFactory.created.every((p) => p.written.includes("hello"))).toBe(true);
+  });
+
+  test("並べ替えた順がワークスペースの並びになる", () => {
+    const { manager, a, b, c } = setupThree();
+    manager.reorder([b.id, c.id, a.id]);
+
+    expect(manager.list().map((s) => s.cwd)).toEqual(["b", "c", "a"]);
+  });
+});
+
 test.describe("エージェントプロファイル", () => {
   test("指定した agent がスナップショットに載る", () => {
     const { manager } = setup();

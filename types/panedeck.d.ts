@@ -120,6 +120,8 @@ export interface Workspace {
 export interface Settings {
   /** 端末の文字サイズ (px) */
   fontSize: number;
+  /** グリッドの列数。0 は幅に合わせた自動 */
+  columns: number;
   /** 起動時に前回のセッション構成を自動で復元するか */
   autoRestore: boolean;
   /** セッションの出力をファイルへ書き出すか */
@@ -171,6 +173,7 @@ export interface DeckApi {
   listSessions(): Promise<Session[]>;
   closeSession(id: string): Promise<boolean>;
   closeAllSessions(): Promise<number>;
+  reorderSessions(ids: string[]): Promise<string[]>;
   broadcast(
     data: string,
     ids?: string[] | null,
