@@ -35,24 +35,16 @@ test.describe("プロファイル定義", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  test("gemini の入力欄を拾う", () => {
-    // 実機で採取した形。Claude Code と同じ角丸ボックスの `│ >`
-    const box = [
-      "╭──────────────────────────────╮",
-      "│ >   Type your message or @path/to/file│",
-      "╰──────────────────────────────╯",
-    ].join("\n");
-
-    expect(
-      resolveProfile("gemini").waitingPatterns.some((p) => p.test(box))
-    ).toBe(true);
+  test("同梱するのは claude / codex / shell", () => {
+    // Gemini CLI は外した。実機で試したところ日本語入力が通らず、
+    // CLI 自体が更新の対象から外れているように見えたため
+    expect(AGENT_PROFILES.map((p) => p.id)).toEqual(["claude", "codex", "shell"]);
   });
 
-  test("同じ入力欄は claude でも拾える（形が共通なので）", () => {
-    const box = "│ >   Type your message or @path/to/file";
-    expect(
-      resolveProfile("claude").waitingPatterns.some((p) => p.test(box))
-    ).toBe(true);
+  test("外した gemini を指しても落ちず既定になる（古い構成の後方互換）", () => {
+    // ワークスペースや自動復元の控えに agent: "gemini" が残っていても、
+    // 読み込みで例外にはしない。Claude Code のパターンで判定される
+    expect(resolveProfile("gemini").id).toBe(DEFAULT_AGENT_ID);
   });
 
   test("行頭の選択マーカー › を拾う（codex の選択肢で使われる）", () => {

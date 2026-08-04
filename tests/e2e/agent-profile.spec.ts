@@ -49,10 +49,7 @@ test("同梱プロファイルが選択肢に並ぶ", async () => {
     options.map((o) => o.value)
   );
 
-  expect(ids).toContain("claude");
-  expect(ids).toContain("codex");
-  expect(ids).toContain("gemini");
-  expect(ids).toContain("shell");
+  expect(ids).toEqual(["claude", "codex", "shell"]);
 });
 
 test("既定は Claude Code（現行動作の維持）", async () => {
@@ -67,9 +64,6 @@ test("エージェントを選ぶと起動コマンドが入れ替わる", async
   await resetSessions(electronApp, page);
   await agentSelect().selectOption("codex");
   await expect(launchCommand()).toHaveValue("codex");
-
-  await agentSelect().selectOption("gemini");
-  await expect(launchCommand()).toHaveValue("gemini");
 
   // シェルは素のまま起動したいので既定コマンドを持たない
   await agentSelect().selectOption("shell");

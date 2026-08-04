@@ -2,7 +2,7 @@
 
 ## プロジェクト概要
 
-複数のコーディングエージェント（Claude Code / Codex / Gemini CLI など）のセッションを
+複数のコーディングエージェント（Claude Code / Codex など）のセッションを
 グリッド分割ペインで同時に走らせ、一括操作するための Electron ターミナルアプリ。
 node-pty + xterm.js。
 
