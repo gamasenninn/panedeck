@@ -26,6 +26,7 @@ interface Pane {
   statusEl: HTMLElement;
   titleEl: HTMLElement;
   selectEl: HTMLInputElement;
+  maximizeEl: HTMLElement;
   status: SessionStatus;
 }
 
@@ -76,6 +77,17 @@ let fontSize = 12;
 let draggingId: string | null = null;
 
 /**
+ * 全面に出しているセッション id。null なら通常のグリッド。
+ *
+ * 見え方だけの状態なので保存しない。送信先の決まり方にも影響させない
+ * （拡大しただけで入力の行き先が変わると驚く）。
+ */
+let maximizedId: string | null = null;
+
+/** グリッドの列数。拡大から戻すときに復元する */
+let columns = 0;
+
+/**
  * ツールバーに通知を出す。
  *
  * window.alert はネイティブモーダルを開いてしまい、E2E テストも実操作も
@@ -100,6 +112,7 @@ async function createPane(session: Session): Promise<Pane> {
       <span class="pane-cwd" data-testid="pane-cwd"></span>
       <span class="pane-command" data-testid="pane-command"></span>
       <span class="pane-status" data-testid="pane-status"></span>
+      <button class="pane-maximize" data-testid="pane-maximize">拡大</button>
       <button class="pane-savelog" data-testid="pane-savelog">ログ</button>
       <button class="pane-close danger" data-testid="pane-close">×</button>
     </div>
@@ -111,6 +124,7 @@ async function createPane(session: Session): Promise<Pane> {
   const commandEl = el.querySelector(".pane-command") as HTMLElement;
   const statusEl = el.querySelector(".pane-status") as HTMLElement;
   const selectEl = el.querySelector(".pane-select") as HTMLInputElement;
+  const maximizeEl = el.querySelector(".pane-maximize") as HTMLElement;
   const body = el.querySelector(".pane-body") as HTMLElement;
 
   titleEl.textContent = session.title;
@@ -146,6 +160,7 @@ async function createPane(session: Session): Promise<Pane> {
     statusEl,
     titleEl,
     selectEl,
+    maximizeEl,
     status: session.status,
   };
   panes.set(session.id, pane);
@@ -173,6 +188,11 @@ async function createPane(session: Session): Promise<Pane> {
     event.stopPropagation();
     await api.closeSession(session.id);
     await sync();
+  });
+
+  maximizeEl.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleMaximize(session.id);
   });
 
   el.querySelector(".pane-savelog")!.addEventListener("click", async (event) => {
@@ -297,9 +317,51 @@ function removePane(id: string) {
   pane.el.remove();
   panes.delete(id);
   if (focusedId === id) focusedId = null;
+
+  // 拡大していたペインが閉じたら通常表示へ戻す。
+  // 残したままだと、隠れたペインだけの何も見えない画面になる
+  if (maximizedId === id) {
+    maximizedId = null;
+    applyMaximize();
+  }
+}
+
+// -------------------------------------------------------------- ペインの拡大
+
+/**
+ * 1 ペインだけを全面に出す / 戻す。
+ *
+ * グリッドを畳んで他を隠すだけで、ペインも端末も作り直さない。pty との接続も
+ * スクロールバックもそのまま残る。
+ */
+function toggleMaximize(id: string) {
+  maximizedId = maximizedId === id ? null : id;
+  applyMaximize();
+}
+
+function applyMaximize() {
+  const on = maximizedId !== null;
+
+  grid.classList.toggle("maximized", on);
+  panes.forEach((pane, paneId) => {
+    const isMax = paneId === maximizedId;
+    pane.el.classList.toggle("maximized", isMax);
+    pane.maximizeEl.textContent = isMax ? "戻す" : "拡大";
+  });
+
+  // 拡大中は 1 列。戻すときに設定してあった列数へ返す
+  grid.style.gridTemplateColumns =
+    !on && columns > 0 ? `repeat(${columns}, minmax(0, 1fr))` : "";
+
+  // 大きさが変わるので測り直す
+  panes.forEach(fit);
 }
 
 function fit(pane: Pane) {
+  // 隠れているペインは測れない。測ると 0 桁になり、その値で pty を
+  // リサイズしてしまう
+  if (pane.el.offsetParent === null) return;
+
   try {
     pane.fitAddon.fit();
     api.resize(pane.id, pane.term.cols, pane.term.rows);
@@ -351,6 +413,8 @@ async function sync() {
   }
 
   applyOrder(sessions);
+  // 拡大中に増えたペインにも状態を行き渡らせる（隠す・ボタンの表示）
+  if (maximizedId !== null) applyMaximize();
 
   const count = sessions.length;
   sessionCountEl.textContent = `${count} セッション`;
@@ -548,10 +612,15 @@ async function commitAutoLog() {
  *
  * @param {number} columns
  */
-function applyColumns(columns) {
-  columnsSelectEl.value = String(columns);
-  grid.style.gridTemplateColumns =
-    columns > 0 ? `repeat(${columns}, minmax(0, 1fr))` : "";
+function applyColumns(next: number) {
+  columns = next;
+  columnsSelectEl.value = String(next);
+
+  // 拡大中は 1 列のままにする。戻したときに applyMaximize が復元する
+  if (maximizedId === null) {
+    grid.style.gridTemplateColumns =
+      next > 0 ? `repeat(${next}, minmax(0, 1fr))` : "";
+  }
 
   panes.forEach(fit);
 }

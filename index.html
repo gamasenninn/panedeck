@@ -218,6 +218,16 @@
         border-color: #58a6ff;
       }
 
+      /* 1 ペインだけを全面に出す。他は隠すだけで、閉じてはいない */
+      #grid.maximized {
+        grid-template-columns: 1fr !important;
+        grid-auto-rows: 1fr;
+      }
+
+      #grid.maximized .pane:not(.maximized) {
+        display: none;
+      }
+
       /* 並べ替え中のペインと、落とし先の目印 */
       .pane.dragging {
         opacity: 0.45;
