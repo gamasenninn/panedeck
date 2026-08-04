@@ -63,6 +63,36 @@ test("実プロセスを起動して出力を受け取り、終了を検知す�
   await expect.poll(() => statusOf(id), { timeout: 20000 }).toBe("exited");
 });
 
+test("実プロセスへ書いた多バイト文字が壊れずに往復する", async () => {
+  // フェイク pty では node-pty と conpty を通らないので、符号化の問題を
+  // 捕まえられない。受け取ったバイト列をそのまま報告するプロセスを立てる。
+  //
+  // 改行まで送ること。pty の行編集は Enter が来るまで入力を保留するので、
+  // 改行が無いと受け取り側のプロセスへ届かない
+  const echo = await createSession(page, {
+    cwd: PROJECT_ROOT,
+    shell: process.execPath,
+    args: [
+      "-e",
+      "process.stdin.on('data', (d) => process.stdout.write('HEX=' + d.toString('hex') + ' TEXT=' + d.toString('utf8')))",
+    ],
+    title: "echo",
+  });
+
+  if (!echo.ok) throw new Error(echo.error);
+  const { id } = echo.session;
+
+  await page.evaluate(
+    ({ sessionId, text }) => window.deck.input(sessionId, text),
+    { sessionId: id, text: "漢A\r" }
+  );
+
+  // 漢 = e6bca2 (UTF-8), A = 41, CR LF = 0d0a
+  await expect
+    .poll(() => logOf(id), { timeout: 20000 })
+    .toContain("HEX=e6bca2410d0a");
+});
+
 test("存在しない cwd を指定したらエラーを返す（アプリは落ちない）", async () => {
   const result = await createSession(page, {
     cwd: path.join(PROJECT_ROOT, "no-such-directory-12345"),
