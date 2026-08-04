@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, clipboard } from "electron";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -331,6 +331,24 @@ ipcMain.handle("session:pickDirectory", async () => {
   });
   if (result.canceled || result.filePaths.length === 0) return null;
   return result.filePaths[0];
+});
+
+// --- クリップボード ---
+
+/**
+ * 端末の選択範囲をコピーする。
+ *
+ * レンダラから直接クリップボードを触らせない。preload はサンドボックス下で
+ * 動くので Electron の clipboard を import できず、`navigator.clipboard` も
+ * file:// では扱いが不安定なため、メインプロセスに寄せる。
+ */
+ipcMain.handle("clipboard:write", (_, text: string) => {
+  try {
+    clipboard.writeText(String(text ?? ""));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 });
 
 // --- 設定 ---

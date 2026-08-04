@@ -191,6 +191,10 @@ export interface DeckApi {
     cb: (failure: { id: string; filePath: string; error: string }) => void
   ): void;
 
+  writeClipboard(
+    text: string
+  ): Promise<{ ok: true } | { ok: false; error: string }>;
+
   getSettings(): Promise<Settings>;
   setSettings(
     settings: Partial<Settings>

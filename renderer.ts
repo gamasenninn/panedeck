@@ -6,6 +6,7 @@
 // グローバル（Terminal / FitAddon）をそのまま使う。
 import type { Session, SessionStatus } from "./types/panedeck";
 import { STATUS_LABELS, WAITING, KEY_SEQUENCES } from "./renderer/constants.js";
+import { shouldCopySelection } from "./renderer/clipboard.js";
 
 // contextBridge が公開したグローバル。モジュールなので、かつて衝突を招いた
 // `const deck` という名前を避ける必要はもう無いが、呼び分けやすさで api のまま
@@ -154,6 +155,17 @@ async function createPane(session: Session): Promise<Pane> {
   // このペインへの直接入力（個別 sendkey）
   term.onData((data) => api.input(session.id, data));
 
+  // 選択したうえでのコピー。これを挟まないと Ctrl+C は pty へ中断として
+  // 送られ、Electron 既定メニューの Edit → Copy も効かない（あちらは DOM の
+  // 選択範囲が対象で、xterm の選択は DOM の選択ではない）
+  term.attachCustomKeyEventHandler((event) => {
+    if (!shouldCopySelection(event, term.hasSelection())) return true;
+
+    copySelection(term);
+    // xterm にもキーを渡さない（渡すと pty へ \x03 が飛ぶ）
+    return false;
+  });
+
   el.addEventListener("mousedown", () => setFocused(session.id));
   selectEl.addEventListener("change", updateBroadcastTarget);
 
@@ -255,6 +267,27 @@ async function moveSession(movedId: string, targetId: string, before: boolean) {
 
   await api.reorderSessions(order);
   await sync();
+}
+
+/**
+ * 端末の選択範囲をクリップボードへ写す。
+ *
+ * 写した後は選択を解除する。残したままだと次に Ctrl+C を押しても
+ * またコピーになり、実行中のコマンドを止められない。
+ */
+async function copySelection(term: InstanceType<typeof Terminal>) {
+  // 空行を選んだときは hasSelection() が true でも中身が無い。何もしない
+  const text = term.getSelection();
+  if (text === "") return;
+
+  const result = await api.writeClipboard(text);
+  if (!result.ok) {
+    showMessage(`コピーできません: ${result.error}`, { error: true });
+    return;
+  }
+
+  term.clearSelection();
+  showMessage(`${text.length} 文字コピーしました`);
 }
 
 function removePane(id: string) {

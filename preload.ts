@@ -33,6 +33,9 @@ const deck: DeckApi = {
     ipcRenderer.on("session:exit", (_, { id, exitCode }) => cb(id, exitCode)),
   onLogError: (cb) => ipcRenderer.on("log:error", (_, failure) => cb(failure)),
 
+  // クリップボード
+  writeClipboard: (text) => ipcRenderer.invoke("clipboard:write", text),
+
   // 設定
   getSettings: () => ipcRenderer.invoke("settings:get"),
   setSettings: (settings) => ipcRenderer.invoke("settings:set", settings),

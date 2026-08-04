@@ -102,6 +102,21 @@ npm run test:packaged   # pack してから、生成物を実際に起動して�
 
 送信先の決まり方は一斉入力と同じ。「止まっているペインにだけ Enter」がこの機能の主用途。
 
+### コピー
+
+端末で文字を選択してから:
+
+| キー | 動き |
+|---|---|
+| `Ctrl+Shift+C` | 選択範囲をコピー |
+| `Ctrl+Insert` | 同上 |
+| `Ctrl+C`（**選択があるとき**） | コピー。pty へ中断は送らない |
+| `Ctrl+C`（選択が無いとき） | 従来どおり中断（`\x03`）を送る |
+
+コピーすると選択は解除される。解除しないと次の `Ctrl+C` もコピーになり、実行中のコマンドを止められなくなるため。
+
+xterm は入力をそのまま pty へ流すので、何もしないと `Ctrl+C` は中断として送られる。Electron 既定メニューの Edit → Copy も効かない（あちらは DOM の選択範囲が対象で、xterm の選択は DOM の選択ではない）。
+
 ### 状態の可視化
 
 | バッジ | 意味 | 判定条件 |
@@ -220,6 +235,7 @@ panedeck/
 | `session:reorder` | R → M | invoke/handle | 並び順の変更 |
 | `session:broadcast` | R → M | invoke/handle | 一斉入力（状態で絞り込み可） |
 | `session:pickDirectory` | R → M | invoke/handle | ディレクトリ選択ダイアログ |
+| `clipboard:write` | R → M | invoke/handle | 選択範囲をクリップボードへ |
 | `session:input` | R → M | send/on | キー入力を pty へ転送 |
 | `session:resize` | R → M | send/on | ターミナルサイズ同期 |
 | `session:data` | M → R | send/on | pty 出力をレンダラへ |
