@@ -29,15 +29,26 @@ export const COMMON_WAITING_PATTERNS: RegExp[] = [
 ];
 
 /**
+ * 角丸ボックスの入力欄。
+ *
+ * Claude Code と Gemini CLI が同じ形を使う（どちらも実機で確認済み）。
+ * 共通パターンに入れていないのは、確かめていないエージェントにまで
+ * 広げないため。使うプロファイルで明示的に足す。
+ */
+const BOXED_PROMPT = /│\s*>/;
+
+/**
  * 同梱するプロファイル。
  *
  * claude のパターンは status-detector の既定をそのまま使う。ここがずれると
  * 「エージェントを指定しなかったとき」と「claude を選んだとき」で判定が
  * 変わってしまうため、複製せず参照する。
  *
- * codex / gemini は共通パターンのみ。各 CLI 固有の入力ボックス表示は実機で
- * 確認できていないので、確かめたものだけを足していくこと。当て推量の正規表現を
- * 入れると誤判定（実行中を入力待ちと見なす）が起きて主機能の信頼性が落ちる。
+ * codex は共通パターンのみで足りる（入力欄・選択肢とも行頭の `›` で出る）。
+ * gemini は Claude Code と同じ角丸ボックスを使うのでそれを足す。
+ * どちらも実機のログから採取した。**確かめたものだけを足すこと。**
+ * 当て推量の正規表現を入れると誤判定（実行中を入力待ちと見なす）が起きて
+ * 主機能の信頼性が落ちる。
  */
 export const AGENT_PROFILES: AgentProfile[] = [
   {
@@ -56,7 +67,8 @@ export const AGENT_PROFILES: AgentProfile[] = [
     id: "gemini",
     name: "Gemini CLI",
     command: "gemini",
-    waitingPatterns: COMMON_WAITING_PATTERNS,
+    // 実機では `│ >   Type your message or @path/to/file` と出る
+    waitingPatterns: [...COMMON_WAITING_PATTERNS, BOXED_PROMPT],
   },
   {
     id: "shell",

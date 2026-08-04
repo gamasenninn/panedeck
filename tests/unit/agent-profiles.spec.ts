@@ -35,6 +35,26 @@ test.describe("プロファイル定義", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  test("gemini の入力欄を拾う", () => {
+    // 実機で採取した形。Claude Code と同じ角丸ボックスの `│ >`
+    const box = [
+      "╭──────────────────────────────╮",
+      "│ >   Type your message or @path/to/file│",
+      "╰──────────────────────────────╯",
+    ].join("\n");
+
+    expect(
+      resolveProfile("gemini").waitingPatterns.some((p) => p.test(box))
+    ).toBe(true);
+  });
+
+  test("同じ入力欄は claude でも拾える（形が共通なので）", () => {
+    const box = "│ >   Type your message or @path/to/file";
+    expect(
+      resolveProfile("claude").waitingPatterns.some((p) => p.test(box))
+    ).toBe(true);
+  });
+
   test("行頭の選択マーカー › を拾う（codex の選択肢で使われる）", () => {
     // 実機の codex は ❯ ではなく › を使っていた。行頭に限るのは、
     // 文章中の › を選択肢と誤認しないため
