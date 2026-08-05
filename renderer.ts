@@ -7,6 +7,7 @@
 import type { Session, SessionStatus } from "./types/panedeck";
 import { STATUS_LABELS, WAITING, KEY_SEQUENCES } from "./renderer/constants.js";
 import { shouldCopySelection } from "./renderer/clipboard.js";
+import { newlineSequenceFor } from "./renderer/keys.js";
 
 // contextBridge が公開したグローバル。モジュールなので、かつて衝突を招いた
 // `const deck` という名前を避ける必要はもう無いが、呼び分けやすさで api のまま
@@ -174,11 +175,25 @@ async function createPane(session: Session): Promise<Pane> {
   // 送られ、Electron 既定メニューの Edit → Copy も効かない（あちらは DOM の
   // 選択範囲が対象で、xterm の選択は DOM の選択ではない）
   term.attachCustomKeyEventHandler((event) => {
-    if (!shouldCopySelection(event, term.hasSelection())) return true;
+    if (shouldCopySelection(event, term.hasSelection())) {
+      copySelection(term);
+      // xterm にもキーを渡さない（渡すと pty へ \x03 が飛ぶ）
+      return false;
+    }
 
-    copySelection(term);
-    // xterm にもキーを渡さない（渡すと pty へ \x03 が飛ぶ）
-    return false;
+    // 端末は Ctrl+Enter と Enter を区別せず、どちらも CR を送ってしまう。
+    // 改行として通る別のバイト列に差し替える
+    const newline = newlineSequenceFor(event);
+    if (newline !== null) {
+      // false を返すのは「xterm に処理させない」だけで、ブラウザ既定の動作は
+      // 残る。Shift+Enter は隠しテキストエリアへ改行が入り、そこから CR が
+      // 重ねて送られる（実測で 1b 0d 0d になった）
+      event.preventDefault();
+      api.input(session.id, newline);
+      return false;
+    }
+
+    return true;
   });
 
   el.addEventListener("mousedown", () => setFocused(session.id));
