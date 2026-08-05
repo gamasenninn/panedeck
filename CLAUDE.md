@@ -11,12 +11,13 @@ node-pty + xterm.js。
 
 主な機能:
 
-- 複数ターミナルのグリッド表示（1〜N ペイン）
-- 全ペイン / 選択ペインへの一斉入力（Broadcast）
+- 複数ターミナルのグリッド表示（列数指定・ドラッグでの並べ替え・1 ペイン拡大）
+- 全ペイン / 選択ペイン / **入力待ちのペインだけ**への一斉入力（Broadcast）
 - 各ペインへの個別 sendkey（Enter / Esc / Ctrl+C / 矢印など）
 - 各セッションの状態可視化（running / waiting / idle / exited）
-- 出力ログのファイル保存
-- セッション構成（ワークスペース）の保存・復元
+- エージェントプロファイル（起動コマンドと待機パターンを組で切り替え）
+- 出力ログのファイル保存・自動保存・古いログの片付け
+- セッション構成（ワークスペース）の保存・復元・起動時の自動復元
 
 ## 引き継ぎ
 
@@ -25,10 +26,18 @@ node-pty + xterm.js。
 
 特に以下は事故りやすい:
 
-- レンダラで `const deck = ...` と書くと contextBridge のグローバルと衝突してスクリプト
-  全体が落ちる（`const api = window.deck` にしてある）
+- **制御文字は必ず `\x1b` のように escape で書く。** 生の ESC を正規表現へ直接
+  埋めるとソース上で不可視になり、書き写しで消えても気づけない（実際に起きた）
+- **ANSI の除去は取りこぼすと入力待ち判定が丸ごと死ぬ。** OSC の終端、空行の
+  数え方、CSI の中間バイト — 詳細は HANDOVER
+- **pty を操作する前に状態を見る。** 終了済みセッションへの `resize()` は例外を
+  投げ、メインプロセスの未処理例外になる
 - E2E の `resetSessions()` には必ず `page` を渡す（渡さないと残骸ペインを掴む）
+- E2E で `launchApp()` に設定パスを渡さないときは使い捨ての一時ディレクトリが
+  使われる。**実 userData を触らせないこと**
 - `window.alert` は使わない（E2E がブロックする）。通知は `showMessage()` へ
+- PowerShell から `git commit -m` にヒアストリングを渡すと引用符で引数が壊れる。
+  **メッセージはファイルに書いて `git commit -F`**
 
 ## 開発方式: TDD 厳守
 
@@ -130,52 +139,69 @@ CSP は `script-src 'self'` のまま。
 
 ```
 panedeck/
-├── main.js              # メインプロセス（IPC ハンドラ）
-├── preload.js           # contextBridge で API を Renderer に公開
+├── main.ts              # メインプロセス（IPC ハンドラ）
+├── preload.ts           # contextBridge で API を Renderer に公開
 ├── index.html           # グリッド UI レイアウト・CSS
-├── renderer.js          # ペイン管理・xterm 接続・ブロードキャスト
-├── lib/
-│   ├── session-manager.js   # pty セッションのレジストリ（コアロジック）
-│   ├── status-detector.js   # 出力から状態を判定する純粋関数
-│   ├── agent-profiles.js    # エージェント定義（表示名/起動コマンド/待機パターン）
-│   ├── command.js           # 起動コマンドの正規化
-│   ├── settings.js          # アプリ設定の読み書き（保存先パスは注入）
-│   ├── log-writer.js        # 出力のバッファリングとファイル追記
-│   ├── log-retention.js     # 古いログの片付け（索引で自作分だけを対象に）
-│   └── workspace.js         # セッション構成の保存・復元
+├── renderer.ts          # ペイン管理・xterm 接続・ブロードキャスト
+├── renderer/            # レンダラ側の分割モジュール
+│   ├── constants.ts         # 状態ラベル・特殊キーの並び
+│   ├── clipboard.ts         # コピーするキー操作かの判定（純粋関数）
+│   └── keys.ts              # 改行を送るキー操作かの判定（純粋関数）
+├── lib/                 # Electron 非依存のロジック
+│   ├── session-manager.ts   # pty セッションのレジストリ（コアロジック）
+│   ├── status-detector.ts   # 出力から状態を判定する純粋関数
+│   ├── agent-profiles.ts    # エージェント定義（表示名/起動コマンド/待機パターン）
+│   ├── command.ts           # 起動コマンドの正規化
+│   ├── settings.ts          # アプリ設定の読み書き（保存先パスは注入）
+│   ├── log-writer.ts        # 出力のバッファリングとファイル追記
+│   ├── log-retention.ts     # 古いログの片付け（索引で自作分だけを対象に）
+│   └── workspace.ts         # セッション構成の保存・復元
 ├── types/
 │   ├── panedeck.d.ts        # 層をまたぐ受け渡しの形（Session / DeckApi など）
 │   └── globals.d.ts         # window.deck・xterm グローバル・E2E の足場
+├── build/               # アイコン（svg が正、png は生成物）
+├── scripts/
+│   ├── make-icon.mjs        # svg → png
+│   └── inspect-log.mjs      # 保存ログを「判定が見る形」で表示する調査用
 └── tests/
-    ├── unit/            # lib/ のロジック単体テスト（Electron 不要）
-    └── e2e/             # Playwright + Electron の E2E テスト
-        ├── helpers/electron-app.js
-        └── *.spec.js
+    ├── unit/            # lib/ と renderer/ の単体テスト（Electron 不要）
+    ├── e2e/             # Playwright + Electron の E2E テスト
+    │   └── helpers/electron-app.ts
+    └── packaged/        # パッケージ版の生成物を起動して検証
 ```
 
 ### 設計方針
 
-- **ロジックは lib/ に切り出し、Electron 非依存に保つ** — `main.js` から純粋に呼び出せる
+- **ロジックは lib/ に切り出し、Electron 非依存に保つ** — `main.ts` から純粋に呼び出せる
   形にすることで、pty や BrowserWindow を起動せずに単体テストできる
 - `SessionManager` は `ptyFactory` を **依存性注入** で受け取る。テストではフェイク pty を
   渡すため、実プロセスを起動せずに create/write/broadcast/close を検証できる
-- `status-detector.js` は状態を持たない純粋関数のみ。入力（出力バッファ・経過時間）に対し
+- `status-detector.ts` は状態を持たない純粋関数のみ。入力（出力バッファ・経過時間）に対し
   出力（状態文字列）が一意に決まるので、エッジケースを網羅的にテストできる
+- **設定・ログ・ワークスペースの保存先パスも注入する。** テストが実ユーザーの
+  userData を汚さないため
+- **状態も並び順もメインプロセスが持つ。** レンダラは 300ms ごとに突き合わせる
+  構造なので、レンダラ側に真実を置くとポーリングのたびに巻き戻る余地が生まれる
+- レンダラ側の判定（コピー・改行のキー操作）も純粋関数として `renderer/` に切り出し、
+  単体テストで組み合わせを確かめる
 
 ## アーキテクチャ
 
 - **セキュリティ**: `contextIsolation: true`, `nodeIntegration: false`
 - **IPC 通信**: Main ↔ Preload ↔ Renderer の3層構造
-- **IPC チャンネル**: `session:*`, `workspace:*`, `log:*`
+- **IPC チャンネル**: `session:*`, `workspace:*`, `log:*`, `settings:*`, `agent:*`,
+  `clipboard:*`
 - 戻り値が要るものは `invoke`/`handle`、キー入力など高頻度のものは `send`/`on`
+- レンダラは ES モジュールとして読み込む。バンドラを挟まないので**相対 import には
+  拡張子 `.js` が要る**
 
 ## テスト規約
 
 ### 単体テスト (tests/unit/)
 
-- `lib/` のモジュールを直接 require して検証する
+- `lib/` と `renderer/` のモジュールを直接 import して検証する
 - Electron も pty も起動しない。高速に回るのでここを厚くする
-- フェイク pty は `tests/unit/helpers/fake-pty.js` を使う
+- フェイク pty は `tests/unit/helpers/fake-pty.ts` を使う
 
 ### E2E テスト (tests/e2e/)
 
