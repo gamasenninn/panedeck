@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+﻿import { test, expect } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -8,6 +8,8 @@ import {
   writtenTo,
   listSessions,
   resetSessions,
+  openSettings,
+  closeSettings,
   waitForPaneCount,
 } from "./helpers/electron-app";
 
@@ -34,6 +36,13 @@ async function givenPanes(titles: string[]) {
     await createSession(page, { cwd: `C:\\app\\${title}`, title });
   }
   await waitForPaneCount(page, titles.length);
+}
+
+/** 列数は設定ダイアログの中にあるので、開いてから触る */
+async function setColumns(value: string) {
+  await openSettings(page);
+  await page.locator("[data-testid=columns]").selectOption(value);
+  await closeSettings(page);
 }
 
 test("拡大するとそのペインだけが見える", async () => {
@@ -167,7 +176,7 @@ test("拡大中にセッションが増えても隠れたままにならない",
 
 test("列数の設定は戻したときに復元される", async () => {
   await givenPanes(["A", "B", "C", "D"]);
-  await page.locator("[data-testid=columns]").selectOption("2");
+  await setColumns("2");
 
   const columnCount = () =>
     page.evaluate(
@@ -184,5 +193,5 @@ test("列数の設定は戻したときに復元される", async () => {
   await maximizeButton(0).click();
   await expect.poll(columnCount).toBe(2);
 
-  await page.locator("[data-testid=columns]").selectOption("0");
+  await setColumns("0");
 });

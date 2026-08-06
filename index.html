@@ -172,6 +172,98 @@
         user-select: none;
       }
 
+      /* ログを書き続けていることの印。設定へ隠した分をここで補う */
+      #auto-log-indicator {
+        color: #d29922;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      #auto-log-indicator[hidden] {
+        display: none;
+      }
+
+      /* --- 設定ダイアログ --- */
+      #settings-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(1, 4, 9, 0.72);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+
+      #settings-backdrop[hidden] {
+        display: none;
+      }
+
+      #settings-dialog {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 10px;
+        padding: 18px 22px 16px;
+        width: min(560px, 92vw);
+        max-height: 86vh;
+        overflow-y: auto;
+      }
+
+      #settings-dialog h2 {
+        font-size: 15px;
+        margin-bottom: 4px;
+      }
+
+      #settings-dialog h3 {
+        font-size: 12px;
+        color: #8b949e;
+        border-bottom: 1px solid #30363d;
+        padding-bottom: 4px;
+        margin: 16px 0 10px;
+        font-weight: 600;
+      }
+
+      #settings-dialog .setting {
+        margin-bottom: 12px;
+      }
+
+      #settings-dialog .setting > label {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+
+      #settings-dialog label.checkbox {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      #settings-dialog .row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      #settings-dialog .row input[type="text"] {
+        flex: 1;
+        min-width: 0;
+      }
+
+      #settings-dialog .hint {
+        color: #6e7681;
+        font-size: 11px;
+        margin-top: 4px;
+        line-height: 1.5;
+      }
+
+      .settings-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 18px;
+      }
+
       /* --- グリッド --- */
       #grid {
         flex: 1;
@@ -405,49 +497,28 @@
 
       <div class="divider"></div>
 
-      <div class="field">
-        <label for="columns">列</label>
-        <select id="columns" data-testid="columns">
-          <option value="0">自動</option>
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-          <option value="6">6</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label for="font-size">文字</label>
-        <input
-          type="number"
-          id="font-size"
-          data-testid="font-size"
-          min="8"
-          max="32"
-          step="1"
-        />
-      </div>
-
-      <div class="divider"></div>
-
       <button id="save-workspace" data-testid="save-workspace">構成を保存</button>
       <button id="restore-workspace" data-testid="restore-workspace">
         構成を復元
       </button>
 
-      <label class="field" for="auto-restore">
-        <input type="checkbox" id="auto-restore" data-testid="auto-restore" />
-        起動時に復元
-      </label>
-
-      <label class="field" for="auto-log">
-        <input type="checkbox" id="auto-log" data-testid="auto-log" />
-        ログ自動保存
-      </label>
+      <button id="open-settings" data-testid="open-settings" title="設定">
+        ⚙ 設定
+      </button>
 
       <div class="spacer"></div>
+
+      <!--
+        設定はダイアログへ隠したが、ログを書き続けていることだけは見えるようにする。
+        気づかないままディスクへ溜まるのを避けるため
+      -->
+      <span
+        id="auto-log-indicator"
+        data-testid="auto-log-indicator"
+        title="ログを自動保存しています"
+        hidden
+        >● ログ記録中</span
+      >
 
       <span id="message" data-testid="message"></span>
       <span id="session-count" data-testid="session-count">0 セッション</span>
@@ -461,6 +532,137 @@
         <code>claude</code> が起動します。
       </div>
     </main>
+
+    <!--
+      設定ダイアログ。別ウィンドウにしていないのは preload と IPC がもう一組
+      増えるため。ネイティブモーダルは E2E をブロックするので使えない
+    -->
+    <div id="settings-backdrop" data-testid="settings-backdrop" hidden>
+      <div
+        id="settings-dialog"
+        data-testid="settings-dialog"
+        role="dialog"
+        aria-labelledby="settings-title"
+      >
+        <h2 id="settings-title">設定</h2>
+
+        <section>
+          <h3>表示</h3>
+
+          <div class="setting">
+            <label for="font-size">文字サイズ</label>
+            <input
+              type="number"
+              id="font-size"
+              data-testid="font-size"
+              min="8"
+              max="32"
+              step="1"
+            />
+            <p class="hint">端末の文字の大きさ (8〜32)</p>
+          </div>
+
+          <div class="setting">
+            <label for="columns">列数</label>
+            <select id="columns" data-testid="columns">
+              <option value="0">自動</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+            <p class="hint">自動は幅に合わせて折り返す</p>
+          </div>
+        </section>
+
+        <section>
+          <h3>起動</h3>
+
+          <div class="setting">
+            <label class="checkbox" for="auto-restore">
+              <input type="checkbox" id="auto-restore" data-testid="auto-restore" />
+              前回のセッション構成を復元する
+            </label>
+            <p class="hint">
+              無効にしても構成の記録は続くので、戻せばまた復元できる
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h3>ログ</h3>
+
+          <div class="setting">
+            <label class="checkbox" for="auto-log">
+              <input type="checkbox" id="auto-log" data-testid="auto-log" />
+              出力をファイルへ自動保存する
+            </label>
+          </div>
+
+          <div class="setting">
+            <label for="log-dir">出力先</label>
+            <div class="row">
+              <input
+                type="text"
+                id="log-dir"
+                data-testid="log-dir"
+                readonly
+                placeholder="（既定の場所）"
+              />
+              <button id="pick-log-dir" data-testid="pick-log-dir">選択</button>
+              <button id="clear-log-dir" data-testid="clear-log-dir">既定に戻す</button>
+            </div>
+          </div>
+
+          <div class="setting">
+            <label class="checkbox" for="log-strip-ansi">
+              <input
+                type="checkbox"
+                id="log-strip-ansi"
+                data-testid="log-strip-ansi"
+              />
+              色や制御文字を落として保存する
+            </label>
+            <p class="hint">後から読むなら有効のまま。生の出力が要るときだけ外す</p>
+          </div>
+
+          <div class="setting">
+            <label for="log-retention-days">保持日数</label>
+            <input
+              type="number"
+              id="log-retention-days"
+              data-testid="log-retention-days"
+              min="0"
+              step="1"
+            />
+            <p class="hint">0 なら期間では消さない</p>
+          </div>
+
+          <div class="setting">
+            <label for="log-max-total-mb">合計サイズの上限 (MB)</label>
+            <input
+              type="number"
+              id="log-max-total-mb"
+              data-testid="log-max-total-mb"
+              min="0"
+              step="1"
+            />
+            <p class="hint">
+              0 なら容量では消さない。超えた分は古い順に消える。
+              <strong>PaneDeck が作ったログだけが対象</strong>
+            </p>
+          </div>
+        </section>
+
+        <div class="settings-actions">
+          <button id="close-settings" data-testid="close-settings" class="primary">
+            閉じる
+          </button>
+        </div>
+      </div>
+    </div>
 
     <footer id="broadcast-bar">
       <label class="field" for="waiting-only">

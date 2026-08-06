@@ -8,6 +8,8 @@ import {
   createSession,
   emitPtyData,
   resetSessions,
+  openSettings,
+  closeSettings,
   waitForPaneCount,
 } from "./helpers/electron-app";
 
@@ -48,6 +50,13 @@ function readLog(name, dir = LOG_DIR) {
 }
 
 const autoLogToggle = () => page.locator("[data-testid=auto-log]");
+
+/** ログ自動保存は設定ダイアログの中にあるので、開いてから触る */
+async function enableAutoLog() {
+  await openSettings(page);
+  await autoLogToggle().check();
+  await closeSettings(page);
+}
 
 test.beforeAll(() => {
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
@@ -156,7 +165,7 @@ test.describe("無効なとき", () => {
 
   test("トグルで有効にすると、以降の出力から書かれる", async () => {
     await resetSessions(electronApp, page);
-    await autoLogToggle().check();
+    await enableAutoLog();
 
     await createSession(page, { cwd: "C:\\app\\repo-a", title: "late" });
     await waitForPaneCount(page, 1);

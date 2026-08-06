@@ -8,6 +8,8 @@ import {
   createSession,
   listSessions,
   resetSessions,
+  openSettings,
+  closeSettings,
   waitForPaneCount,
 } from "./helpers/electron-app";
 
@@ -45,9 +47,20 @@ function paneFontSizes(): Promise<number[]> {
   );
 }
 
-async function setFontSize(value) {
+/** 文字サイズは設定ダイアログの中にあるので、開いてから触る */
+async function setFontSize(value: string | number) {
+  await openSettings(page);
   await fontSizeInput().fill(String(value));
   await fontSizeInput().dispatchEvent("change");
+  await closeSettings(page);
+}
+
+/** 設定ダイアログに表示されている値 */
+async function shownFontSize(): Promise<string> {
+  await openSettings(page);
+  const value = await fontSizeInput().inputValue();
+  await closeSettings(page);
+  return value;
 }
 
 async function givenPanes(n) {
@@ -61,7 +74,7 @@ async function givenPanes(n) {
 test("既定は 12", async () => {
   await givenPanes(1);
 
-  await expect(fontSizeInput()).toHaveValue("12");
+  expect(await shownFontSize()).toBe("12");
   expect(await paneFontSizes()).toEqual([12]);
 });
 
@@ -103,7 +116,7 @@ test.describe("範囲外の入力", () => {
     await givenPanes(1);
     await setFontSize(999);
 
-    await expect(fontSizeInput()).toHaveValue("32");
+    expect(await shownFontSize()).toBe("32");
     await expect.poll(paneFontSizes).toEqual([32]);
   });
 
@@ -111,7 +124,7 @@ test.describe("範囲外の入力", () => {
     await givenPanes(1);
     await setFontSize(1);
 
-    await expect(fontSizeInput()).toHaveValue("8");
+    expect(await shownFontSize()).toBe("8");
     await expect.poll(paneFontSizes).toEqual([8]);
   });
 
@@ -122,7 +135,7 @@ test.describe("範囲外の入力", () => {
 
     await setFontSize("");
 
-    await expect(fontSizeInput()).toHaveValue("16");
+    expect(await shownFontSize()).toBe("16");
     expect(await paneFontSizes()).toEqual([16]);
   });
 
@@ -139,7 +152,7 @@ test.describe("範囲外の入力", () => {
       input.dispatchEvent(new Event("change"));
     });
 
-    await expect(fontSizeInput()).toHaveValue("16");
+    expect(await shownFontSize()).toBe("16");
     expect(await paneFontSizes()).toEqual([16]);
   });
 });
@@ -165,7 +178,7 @@ test.describe("永続化", () => {
     ({ electronApp, page } = await launchApp({ settingsPath: SETTINGS_PATH }));
     await useFakePty(electronApp);
 
-    await expect(fontSizeInput()).toHaveValue("26");
+    expect(await shownFontSize()).toBe("26");
 
     await createSession(page, { cwd: "C:\\app\\repo-after-restart" });
     await waitForPaneCount(page, 1);

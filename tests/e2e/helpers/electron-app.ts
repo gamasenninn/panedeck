@@ -14,7 +14,7 @@ const APP_PATH = path.resolve(__dirname, "..", "..", "..");
  * ユーザーの設定（自動保存の ON/OFF など）に従って動き、ユーザーの
  * フォルダへテスト用のログを書き散らす。
  */
-const disposableDirs = new Map<ElectronApplication, string>();
+const disposableDirs = new Map<ElectronApplication, string[]>();
 
 /**
  * Electron アプリを起動し、アプリと最初のウィンドウを返す。
@@ -29,10 +29,10 @@ export async function launchApp({ settingsPath }: { settingsPath?: string } = {}
   page: Page;
 }> {
   // 渡されなければ捨ててよい場所を用意する。実ユーザーの userData は使わない
-  const disposable = settingsPath
+  const disposableSettings = settingsPath
     ? null
     : fs.mkdtempSync(path.join(os.tmpdir(), "panedeck-e2e-"));
-  const resolved = settingsPath ?? path.join(disposable!, "settings.json");
+  const resolved = settingsPath ?? path.join(disposableSettings!, "settings.json");
 
   const electronApp = await electron.launch({
     args: [APP_PATH],
@@ -42,7 +42,7 @@ export async function launchApp({ settingsPath }: { settingsPath?: string } = {}
     } as Record<string, string>,
   });
 
-  if (disposable) disposableDirs.set(electronApp, disposable);
+  if (disposableSettings) disposableDirs.set(electronApp, [disposableSettings]);
 
   const page = await electronApp.firstWindow();
   await page.waitForLoadState("domcontentloaded");
@@ -55,11 +55,10 @@ export async function launchApp({ settingsPath }: { settingsPath?: string } = {}
 export async function closeApp(electronApp: ElectronApplication) {
   await electronApp.close();
 
-  const disposable = disposableDirs.get(electronApp);
-  if (disposable) {
-    fs.rmSync(disposable, { recursive: true, force: true });
-    disposableDirs.delete(electronApp);
+  for (const dir of disposableDirs.get(electronApp) ?? []) {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
+  disposableDirs.delete(electronApp);
 }
 
 /**
@@ -209,6 +208,22 @@ export async function advanceClock(electronApp: ElectronApplication, ms: number)
   await electronApp.evaluate((_, delta) => {
     global.__clock += delta;
   }, ms);
+}
+
+/**
+ * 設定ダイアログを開く。
+ *
+ * 文字サイズ・列数・自動復元・ログの設定はここに入っている。閉じたままでは
+ * Playwright が操作できないので、触る前に必ず開くこと。
+ */
+export async function openSettings(page: Page) {
+  await page.locator("[data-testid=open-settings]").click();
+  await page.locator("[data-testid=settings-dialog]").waitFor({ state: "visible" });
+}
+
+export async function closeSettings(page: Page) {
+  await page.locator("[data-testid=close-settings]").click();
+  await page.locator("[data-testid=settings-dialog]").waitFor({ state: "hidden" });
 }
 
 /**

@@ -7,6 +7,8 @@ import {
   createSession,
   listSessions,
   resetSessions,
+  openSettings,
+  closeSettings,
   waitForPaneCount,
 } from "./helpers/electron-app";
 
@@ -25,9 +27,18 @@ const STAY_ALIVE = ["-e", "setInterval(() => {}, 1000)"];
 let electronApp;
 let page;
 
-/** 設定と自動保存ファイルを消してからアプリを起動し直す。 */
+/**
+ * アプリを起動し直す。
+ *
+ * 閉じる前にセッションを畳む。このスイートは生き続ける node プロセスを
+ * 立てるので、抱えたままアプリを終わらせると conpty の後始末がアプリの終了と
+ * 競合し、**次に起動したアプリが応答を返さなくなる**ことがあった。
+ */
 async function relaunch() {
-  if (electronApp) await closeApp(electronApp);
+  if (electronApp) {
+    await electronApp.evaluate(() => global.__sessionManager.closeAll());
+    await closeApp(electronApp);
+  }
   ({ electronApp, page } = await launchApp({ settingsPath: SETTINGS_PATH }));
 }
 
@@ -51,6 +62,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  await electronApp.evaluate(() => global.__sessionManager.closeAll());
   await closeApp(electronApp);
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
 });
@@ -141,13 +153,28 @@ test("全部閉じた状態で再起動すると空のまま", async () => {
 test.describe("自動復元の ON / OFF", () => {
   const toggle = () => page.locator("[data-testid=auto-restore]");
 
+  /** 自動復元は設定ダイアログの中にあるので、開いてから触る */
+  async function setAutoRestore(on: boolean) {
+    await openSettings(page);
+    if (on) await toggle().check();
+    else await toggle().uncheck();
+    await closeSettings(page);
+  }
+
+  async function isAutoRestoreOn(): Promise<boolean> {
+    await openSettings(page);
+    const checked = await toggle().isChecked();
+    await closeSettings(page);
+    return checked;
+  }
+
   test("既定は有効", async () => {
-    await expect(toggle()).toBeChecked();
+    expect(await isAutoRestoreOn()).toBe(true);
   });
 
   test("無効にすると再起動しても復元されない", async () => {
     await resetSessions(electronApp, page);
-    await toggle().uncheck();
+    await setAutoRestore(false);
     await givenSession("alpha");
     await waitForPaneCount(page, 1);
     await expect.poll(() => readAutoSaved().sessions.length).toBe(1);
@@ -155,16 +182,16 @@ test.describe("自動復元の ON / OFF", () => {
     await relaunch();
 
     await waitForPaneCount(page, 0);
-    await expect(toggle()).not.toBeChecked();
+    expect(await isAutoRestoreOn()).toBe(false);
     await expect(page.locator("[data-testid=empty-state]")).toBeVisible();
   });
 
   test("無効でも構成の記録自体は続く（戻せば復元できる）", async () => {
     // 記録まで止めると、戻したときに何も残っていない
-    await expect(toggle()).not.toBeChecked();
+    expect(await isAutoRestoreOn()).toBe(false);
     expect(readAutoSaved().sessions[0].title).toBe("alpha");
 
-    await toggle().check();
+    await setAutoRestore(true);
     await relaunch();
 
     await waitForPaneCount(page, 1);

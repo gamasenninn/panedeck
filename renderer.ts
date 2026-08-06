@@ -1,10 +1,8 @@
-// contextBridge が公開したグローバル `deck` と同名で const 宣言すると
-// "Identifier 'deck' has already been declared" でスクリプト全体が落ちるため、別名にする
-// ES モジュールとして読み込まれる（index.html の <script type="module">）。
+﻿// ES モジュールとして読み込まれる（index.html の <script type="module">）。
 // バンドラは挟まないので、相対 import には拡張子 .js を書くこと。
 // xterm は npm の bare import が解決できないため、script タグで読み込んだ
 // グローバル（Terminal / FitAddon）をそのまま使う。
-import type { Session, SessionStatus } from "./types/panedeck";
+import type { Session, SessionStatus, Settings } from "./types/panedeck";
 import { STATUS_LABELS, WAITING, KEY_SEQUENCES } from "./renderer/constants.js";
 import { shouldCopySelection } from "./renderer/clipboard.js";
 import { newlineSequenceFor } from "./renderer/keys.js";
@@ -48,6 +46,16 @@ const fontSizeInput = document.getElementById("font-size") as HTMLInputElement;
 const columnsSelectEl = document.getElementById("columns") as HTMLSelectElement;
 const autoRestoreEl = document.getElementById("auto-restore") as HTMLInputElement;
 const autoLogEl = document.getElementById("auto-log") as HTMLInputElement;
+const logStripAnsiEl = document.getElementById("log-strip-ansi") as HTMLInputElement;
+const logDirEl = document.getElementById("log-dir") as HTMLInputElement;
+const logRetentionDaysEl = document.getElementById(
+  "log-retention-days"
+) as HTMLInputElement;
+const logMaxTotalMbEl = document.getElementById(
+  "log-max-total-mb"
+) as HTMLInputElement;
+const autoLogIndicatorEl = document.getElementById("auto-log-indicator")!;
+const settingsBackdropEl = document.getElementById("settings-backdrop")!;
 
 /** セッション id → ペイン */
 const panes = new Map<string, Pane>();
@@ -544,10 +552,8 @@ async function setupAgentSelect() {
  *
  * 変更後は fit() を通す。桁数・行数が変わるので、pty 側にも既存の resize 経路で
  * 伝わる（伝えないと出力の折り返しがずれる）。
- *
- * @param {number} size
  */
-function applyFontSize(size) {
+function applyFontSize(size: number) {
   fontSize = size;
   fontSizeInput.value = String(size);
 
@@ -558,74 +564,9 @@ function applyFontSize(size) {
 }
 
 /**
- * 入力欄の変更を設定へ反映する。
- *
- * 空欄や数値でない入力は「まだ入力途中」とみなして何もしない。打っている最中に
- * 勝手に既定へ戻ると打ち直しになるため。範囲への丸めはメイン側が行い、
- * 返ってきた値で入力欄を上書きする。
- */
-async function commitFontSize() {
-  const raw = fontSizeInput.value.trim();
-  if (raw === "" || !Number.isFinite(Number(raw))) {
-    fontSizeInput.value = String(fontSize);
-    return;
-  }
-
-  const result = await api.setSettings({ fontSize: Number(raw) });
-  if (!result.ok) {
-    showMessage(`設定を保存できません: ${result.error}`, { error: true });
-    fontSizeInput.value = String(fontSize);
-    return;
-  }
-
-  applyFontSize(result.settings.fontSize);
-}
-
-/**
- * 自動復元の ON / OFF を保存する。
- *
- * 復元されるかどうかを決めるだけで、構成の記録は止めない。記録まで止めると
- * 有効に戻したときに復元するものが残っていない。
- */
-async function commitAutoRestore() {
-  const result = await api.setSettings({ autoRestore: autoRestoreEl.checked });
-  if (!result.ok) {
-    showMessage(`設定を保存できません: ${result.error}`, { error: true });
-    // 保存できていない状態を有効に見せない
-    autoRestoreEl.checked = !autoRestoreEl.checked;
-    return;
-  }
-
-  autoRestoreEl.checked = result.settings.autoRestore;
-}
-
-/**
- * ログの自動保存の ON / OFF を保存する。
- *
- * 既に開いているセッションの分も含めて、メインプロセス側が書き出しを
- * 開始・停止する。
- */
-async function commitAutoLog() {
-  const result = await api.setSettings({ autoLog: autoLogEl.checked });
-  if (!result.ok) {
-    showMessage(`設定を保存できません: ${result.error}`, { error: true });
-    autoLogEl.checked = !autoLogEl.checked;
-    return;
-  }
-
-  autoLogEl.checked = result.settings.autoLog;
-  // 出力先は設定ファイルでしか変えられないので、有効にしたときに示す
-  showMessage(
-    autoLogEl.checked ? "ログの自動保存を開始しました" : "ログの自動保存を止めました"
-  );
-}
-
-/**
  * グリッドの列数を反映する。
  *
  * 0 は「幅に合わせて自動で折り返す」で、その場合は CSS の既定に戻す。
- *
- * @param {number} columns
  */
 function applyColumns(next: number) {
   columns = next;
@@ -640,23 +581,77 @@ function applyColumns(next: number) {
   panes.forEach(fit);
 }
 
-async function commitColumns() {
-  const result = await api.setSettings({ columns: Number(columnsSelectEl.value) });
+/**
+ * 設定を画面へ行き渡らせる。
+ *
+ * 保存の戻り値と読み込みの両方がここを通るので、**画面に出る値は必ず
+ * メイン側が正規化した後のもの**になる。丸めの規則をレンダラが持たない。
+ */
+function applySettings(settings: Settings) {
+  applyFontSize(settings.fontSize);
+  applyColumns(settings.columns);
+
+  autoRestoreEl.checked = settings.autoRestore;
+  autoLogEl.checked = settings.autoLog;
+  logStripAnsiEl.checked = settings.logStripAnsi;
+  logDirEl.value = settings.logDir;
+  logRetentionDaysEl.value = String(settings.logRetentionDays);
+  logMaxTotalMbEl.value = String(settings.logMaxTotalMB);
+
+  // 設定へ隠した分、書き続けていることはツールバーで示す
+  autoLogIndicatorEl.hidden = !settings.autoLog;
+}
+
+/** 変更した項目だけを保存し、返ってきた値で画面を揃える。 */
+async function commitSetting(patch: Partial<Settings>) {
+  const result = await api.setSettings(patch);
   if (!result.ok) {
     showMessage(`設定を保存できません: ${result.error}`, { error: true });
+    // 保存できていない値を画面に残さない
+    await loadSettings();
     return;
   }
 
-  applyColumns(result.settings.columns);
+  applySettings(result.settings);
 }
 
-/** 起動時に保存済みの設定を読み込む。 */
+/**
+ * 数値の入力欄を保存する。
+ *
+ * 空欄や数値でない入力は「まだ入力途中」とみなして何もしない。打っている最中に
+ * 勝手に既定へ戻ると打ち直しになるため。範囲への丸めはメイン側が行う。
+ */
+async function commitNumber(input: HTMLInputElement, key: keyof Settings) {
+  const raw = input.value.trim();
+  if (raw === "" || !Number.isFinite(Number(raw))) {
+    await loadSettings();
+    return;
+  }
+
+  await commitSetting({ [key]: Number(raw) });
+}
+
+/** 保存済みの設定を読み込んで画面へ反映する。 */
 async function loadSettings() {
-  const settings = await api.getSettings();
-  applyFontSize(settings.fontSize);
-  applyColumns(settings.columns);
-  autoRestoreEl.checked = settings.autoRestore;
-  autoLogEl.checked = settings.autoLog;
+  applySettings(await api.getSettings());
+}
+
+// ------------------------------------------------------- 設定ダイアログ
+
+function openSettings() {
+  settingsBackdropEl.hidden = false;
+}
+
+function closeSettings() {
+  settingsBackdropEl.hidden = true;
+}
+
+/** ログの出力先を選ぶ。空に戻すと既定の場所（userData 配下）に戻る。 */
+async function pickLogDir() {
+  const dir = await api.pickDirectory();
+  if (!dir) return;
+
+  await commitSetting({ logDir: dir });
 }
 
 async function addSession() {
@@ -717,13 +712,49 @@ broadcastInput.addEventListener("keydown", (event) => {
 
 waitingOnlyEl.addEventListener("change", updateBroadcastTarget);
 
-fontSizeInput.addEventListener("change", commitFontSize);
+// --- 設定ダイアログ ---
 
-autoRestoreEl.addEventListener("change", commitAutoRestore);
+document.getElementById("open-settings")!.addEventListener("click", openSettings);
+document.getElementById("close-settings")!.addEventListener("click", closeSettings);
 
-autoLogEl.addEventListener("change", commitAutoLog);
+// 背景のクリックで閉じる。中身のクリックは拾わない
+settingsBackdropEl.addEventListener("click", (event) => {
+  if (event.target === settingsBackdropEl) closeSettings();
+});
 
-columnsSelectEl.addEventListener("change", commitColumns);
+// Esc で閉じる。**開いているときだけ**拾う。端末では Esc は pty へ送る
+// 必要があり、常時横取りすると実行中の処理を中断できなくなる
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !settingsBackdropEl.hidden) closeSettings();
+});
+
+fontSizeInput.addEventListener("change", () =>
+  commitNumber(fontSizeInput, "fontSize")
+);
+logRetentionDaysEl.addEventListener("change", () =>
+  commitNumber(logRetentionDaysEl, "logRetentionDays")
+);
+logMaxTotalMbEl.addEventListener("change", () =>
+  commitNumber(logMaxTotalMbEl, "logMaxTotalMB")
+);
+
+columnsSelectEl.addEventListener("change", () =>
+  commitSetting({ columns: Number(columnsSelectEl.value) })
+);
+autoRestoreEl.addEventListener("change", () =>
+  commitSetting({ autoRestore: autoRestoreEl.checked })
+);
+autoLogEl.addEventListener("change", () =>
+  commitSetting({ autoLog: autoLogEl.checked })
+);
+logStripAnsiEl.addEventListener("change", () =>
+  commitSetting({ logStripAnsi: logStripAnsiEl.checked })
+);
+
+document.getElementById("pick-log-dir")!.addEventListener("click", pickLogDir);
+document
+  .getElementById("clear-log-dir")!
+  .addEventListener("click", () => commitSetting({ logDir: "" }));
 
 const keyButtons = document.querySelectorAll<HTMLElement>("#keys button");
 keyButtons.forEach((button) => {

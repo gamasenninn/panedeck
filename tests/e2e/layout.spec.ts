@@ -12,6 +12,8 @@ import {
   mockOpenDialog,
   mockSaveDialog,
   resetSessions,
+  openSettings,
+  closeSettings,
   waitForPaneCount,
 } from "./helpers/electron-app";
 
@@ -35,6 +37,20 @@ test.afterAll(async () => {
 
 const paneTitles = () => page.locator("[data-testid=pane-title]");
 const columnsSelect = () => page.locator("[data-testid=columns]");
+
+/** 列数は設定ダイアログの中にあるので、開いてから触る */
+async function setColumns(value: string) {
+  await openSettings(page);
+  await columnsSelect().selectOption(value);
+  await closeSettings(page);
+}
+
+async function shownColumns(): Promise<string> {
+  await openSettings(page);
+  const value = await columnsSelect().inputValue();
+  await closeSettings(page);
+  return value;
+}
 
 /** メインプロセス側の並び順 */
 async function orderInMain() {
@@ -210,30 +226,42 @@ test.describe("列数", () => {
 
   test("既定は自動", async () => {
     await givenPanes(["A"]);
-    await expect(columnsSelect()).toHaveValue("0");
+    expect(await shownColumns()).toBe("0");
   });
 
   test("列数を指定するとグリッドが従う", async () => {
     await givenPanes(["A", "B", "C", "D"]);
 
-    await columnsSelect().selectOption("2");
+    await setColumns("2");
     await expect.poll(async () => (await gridColumns()).split(" ").length).toBe(2);
 
-    await columnsSelect().selectOption("1");
+    await setColumns("1");
     await expect.poll(async () => (await gridColumns()).split(" ").length).toBe(1);
   });
 
   test("自動に戻せる", async () => {
+    // 自動のときのトラック数はウィンドウ幅で変わる（auto-fit）ので、数では
+    // 見ない。列数を指定したときだけ inline style が付く実装なので、
+    // 「指定が外れたこと」で確かめる
+    const inlineColumns = () =>
+      page.evaluate(() => document.getElementById("grid")!.style.gridTemplateColumns);
+
     await givenPanes(["A", "B"]);
-    await columnsSelect().selectOption("1");
+    await setColumns("1");
+    // 値そのものは見ない。ブラウザが正規化する（0 → 0px）
+    await expect.poll(inlineColumns).not.toBe("");
     await expect.poll(async () => (await gridColumns()).split(" ").length).toBe(1);
 
-    await columnsSelect().selectOption("0");
-    await expect.poll(async () => (await gridColumns()).split(" ").length).toBe(2);
+    await setColumns("0");
+    await expect.poll(inlineColumns).toBe("");
+    // 1 列に固定されたままでないこと。実際の本数は幅次第なので下限だけ見る
+    await expect
+      .poll(async () => (await gridColumns()).split(" ").length)
+      .toBeGreaterThan(1);
   });
 
   test("設定として保存される", async () => {
-    await columnsSelect().selectOption("3");
+    await setColumns("3");
 
     await expect
       .poll(() => JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8")).columns)
