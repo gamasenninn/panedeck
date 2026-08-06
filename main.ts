@@ -219,10 +219,29 @@ function createWindow(): void {
     // パッケージ版は electron-builder が実行ファイルに埋め込むが、
     // npm start で動かしているときはここで指定しないと既定のままになる
     icon: path.join(app.getAppPath(), "build", "icon.png"),
+
+    // Electron には Chromium のような真のヘッドレスが無い。E2E では
+    // **画面の外へ出す**（隠すのではない）。
+    //
+    // `show: false` にすると Chromium がフレームを作らなくなり、Playwright の
+    // 安定性チェックが毎回待たされて実行時間が 6 倍以上に膨らんだ。
+    // 省電力系のスイッチを切っても変わらない。画面外なら描画は続くので、
+    // 目に触れないことと速さを両立できる
+    ...(process.env.PANEDECK_HIDE_WINDOW === "1"
+      ? { x: -4000, y: -4000, skipTaskbar: true }
+      : {}),
+
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+
+      // 背景に回してもタイマーを間引かせない。
+      //
+      // このアプリは「どのペインが止まっているか」を 300ms ポーリングで
+      // 追うので、間引かれると別の作業をしている間ほど状態が古くなる。
+      // 見張るためのアプリが、見ていないときに更新を止めては本末転倒。
+      backgroundThrottling: false,
     },
   });
 

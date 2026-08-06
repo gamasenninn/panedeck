@@ -67,7 +67,8 @@ npm run build      # TypeScript を dist/ へコンパイル
 npm test           # 型検査 + ビルド + 全テスト（unit + e2e）
 npm run typecheck  # 型検査のみ（tsc --noEmit）
 npm run test:unit  # ロジック単体テストのみ（高速）
-npm run test:e2e   # Electron E2E テストのみ
+npm run test:e2e   # Electron E2E テストのみ（ウィンドウは画面外）
+npm run test:headed  # ウィンドウを表示して E2E
 npm run test:report  # HTML レポート表示
 npm run rebuild    # node-pty を Electron ABI 向けに再ビルド
 ```

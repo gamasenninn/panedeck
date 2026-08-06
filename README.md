@@ -282,9 +282,14 @@ npm test              # 型検査 + ビルド + 単体 + E2E
 npm run typecheck     # 型検査のみ
 npm run test:unit     # ロジック単体テストのみ（高速、Electron 不要）
 npm run test:e2e      # Electron E2E のみ
+npm run test:headed   # ウィンドウを表示して E2E（動きを目で追いたいとき）
 npm run test:packaged # パッケージ版の生成物を検証
 npm run test:report
 ```
+
+E2E は既定でウィンドウが画面に出ない。Electron には Chromium のような真のヘッドレスが無いので、**ウィンドウを画面の外へ置いている**（隠しているのではない）。
+
+`show: false` でも目には触れないが、Chromium がフレームを作らなくなり Playwright の安定性チェックが毎回待たされる。実測で 1 スイート 9 秒が 59 秒、全体では 2.3 分が 11.6 分に膨らんだ。省電力系のスイッチを切っても変わらない。画面外なら描画は続くので、速度を落とさずに済む。
 
 E2E は `global.__sessionManager.ptyFactory` をフェイクに差し替えて実プロセス無しで検証する。時計も差し替えられるので、状態遷移のテストが実時間に左右されない。`real-pty.spec.ts` と自動復元のテストだけはフェイクを使わず、実際にプロセスを起動する。
 

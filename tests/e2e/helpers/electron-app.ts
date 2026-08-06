@@ -39,6 +39,9 @@ export async function launchApp({ settingsPath }: { settingsPath?: string } = {}
     env: {
       ...process.env,
       PANEDECK_SETTINGS_PATH: resolved,
+      // 既定ではウィンドウを出さずに回す。見ながら追いたいときは
+      // npm run test:headed（PANEDECK_SHOW_WINDOW=1）
+      PANEDECK_HIDE_WINDOW: process.env.PANEDECK_SHOW_WINDOW === "1" ? "0" : "1",
     } as Record<string, string>,
   });
 

@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "panedeck",
   "version": "0.1.0",
   "main": "dist/main.js",
@@ -12,7 +12,7 @@
     "test:unit": "npx playwright test --project=unit",
     "test:e2e": "npx playwright test --project=e2e",
     "test:packaged": "npm run pack && npx playwright test --project=packaged",
-    "test:headed": "npx playwright test --project=e2e --headed",
+    "test:headed": "cross-env PANEDECK_SHOW_WINDOW=1 npx playwright test --project=e2e",
     "test:report": "npx playwright show-report",
     "icon": "node scripts/make-icon.mjs",
     "pack": "npm run build && electron-builder --dir",
@@ -23,6 +23,7 @@
     "@electron/rebuild": "^4.0.3",
     "@playwright/test": "^1.58.2",
     "@types/node": "^26.1.2",
+    "cross-env": "^10.1.0",
     "electron": "^40.6.1",
     "electron-builder": "^26.15.3",
     "sharp": "^0.35.3",
