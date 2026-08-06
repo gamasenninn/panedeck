@@ -60,6 +60,8 @@ export interface AgentProfile extends AgentProfileSummary {
 
 /** node-pty のうち SessionManager が使う部分。テストのフェイクもこの形 */
 export interface Pty {
+  /** 起動したプロセスの pid。フェイクには無いので任意 */
+  readonly pid?: number;
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(): void;

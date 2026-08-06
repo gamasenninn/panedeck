@@ -191,6 +191,76 @@ test.describe("resize", () => {
     expect(manager.resize(a.id, 120, 50)).toBe(false);
     expect(ptyFactory.last()!.resized).toEqual([]);
   });
+
+  /**
+   * Windows の ConPTY は起動直後のリサイズでメインプロセスごと固まることが
+   * ある（#16）。画面側は起動時に 80x24 → 79x24 → 実寸と続けて投げてくるので、
+   * 実際には何も変わらない要求をここで落として呼び出し回数を減らす。
+   */
+  test("同じ寸法への要求では pty を触らない", () => {
+    const { manager, ptyFactory } = setup();
+    const a = manager.create({ cwd: "a", cols: 80, rows: 24 });
+
+    expect(manager.resize(a.id, 80, 24)).toBe(true);
+    expect(ptyFactory.last()!.resized).toEqual([]);
+
+    manager.resize(a.id, 100, 30);
+    manager.resize(a.id, 100, 30);
+    expect(ptyFactory.last()!.resized).toEqual([{ cols: 100, rows: 30 }]);
+  });
+
+  /**
+   * ConPTY は子プロセスが消えた後にリサイズすると戻ってこない。node-pty の
+   * onExit は実際の終了より遅れて届くので、exited フラグだけでは
+   * 「もう居ないのに exited はまだ false」という隙間を塞げない（#16）。
+   */
+  test("プロセスが消えていたらリサイズしない", () => {
+    const ptyFactory = createFakePtyFactory();
+    const manager = new SessionManager({
+      ptyFactory,
+      now: createFakeClock(),
+      isProcessAlive: () => false,
+    });
+    const a = manager.create({ cwd: "a", cols: 80, rows: 24 });
+    (ptyFactory.last() as any).pid = 4242;
+
+    expect(manager.resize(a.id, 100, 30)).toBe(false);
+    expect(ptyFactory.last()!.resized).toEqual([]);
+  });
+
+  test("プロセスが生きていればリサイズする", () => {
+    const ptyFactory = createFakePtyFactory();
+    const manager = new SessionManager({
+      ptyFactory,
+      now: createFakeClock(),
+      isProcessAlive: () => true,
+    });
+    const a = manager.create({ cwd: "a", cols: 80, rows: 24 });
+    (ptyFactory.last() as any).pid = 4242;
+
+    expect(manager.resize(a.id, 100, 30)).toBe(true);
+    expect(ptyFactory.last()!.resized).toEqual([{ cols: 100, rows: 30 }]);
+  });
+
+  test("pid を持たない pty は生存確認を省く", () => {
+    // フェイク pty には pid が無い。確認しようがないものを死んだ扱いにすると
+    // 何もリサイズできなくなる
+    const { manager, ptyFactory } = setup();
+    const a = manager.create({ cwd: "a", cols: 80, rows: 24 });
+
+    expect(manager.resize(a.id, 100, 30)).toBe(true);
+    expect(ptyFactory.last()!.resized).toEqual([{ cols: 100, rows: 30 }]);
+  });
+
+  test("リサイズ後の寸法はセッションに反映される", () => {
+    const { manager } = setup();
+    const a = manager.create({ cwd: "a", cols: 80, rows: 24 });
+    manager.resize(a.id, 100, 30);
+
+    const session = manager.get(a.id)!;
+    expect(session.cols).toBe(100);
+    expect(session.rows).toBe(30);
+  });
 });
 
 test.describe("close", () => {

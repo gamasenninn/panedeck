@@ -35,6 +35,22 @@ export interface SessionManagerDeps {
   now?: () => number;
   /** ログ保持量の上限 */
   maxLogBytes?: number;
+  /**
+   * pid のプロセスがまだ居るかを返す。
+   *
+   * 既定はシグナル 0 の送信。存在しないプロセスなら例外になるので、
+   * 何も起こさずに生死だけを確かめられる。
+   */
+  isProcessAlive?: (pid: number) => boolean;
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -47,6 +63,7 @@ export class SessionManager {
   ptyFactory: (options: PtyFactoryOptions) => Pty;
   now: () => number;
   maxLogBytes: number;
+  isProcessAlive: (pid: number) => boolean;
 
   sessions = new Map<string, LiveSession>();
   nextId = 1;
@@ -58,10 +75,12 @@ export class SessionManager {
     ptyFactory,
     now = () => Date.now(),
     maxLogBytes = DEFAULT_MAX_LOG_BYTES,
+    isProcessAlive = processIsAlive,
   }: SessionManagerDeps) {
     this.ptyFactory = ptyFactory;
     this.now = now;
     this.maxLogBytes = maxLogBytes;
+    this.isProcessAlive = isProcessAlive;
   }
 
   /** セッションを生成する。 */
@@ -201,10 +220,23 @@ export class SessionManager {
    * 例外を投げ、レンダラは文字サイズ・列数・ウィンドウの変化のたびに全ペインへ
    * resize を投げるので、終了したペインが 1 つ残っているだけでメインプロセスの
    * 未処理例外になる。書き込み（write）と同じ扱いにそろえる。
+   *
+   * 寸法が変わらない要求は pty に渡さない。Windows の ConPTY は消えた
+   * プロセスをリサイズすると戻ってこず、node-pty の resize はメインプロセスの
+   * 上で同期的に走るのでアプリ全体が固まる（#16）。効果のない呼び出しを
+   * 重ねるだけ危険が増える。
+   *
+   * onExit は実際の終了より遅れて届くので、フラグに加えてプロセスの生死も
+   * 見る。ここを抜けた直後に終了する可能性までは消せないが、隙間は狭まる。
    */
   resize(id: string, cols: number, rows: number): boolean {
     const session = this.sessions.get(id);
     if (!session || session.exited) return false;
+    if (session.cols === cols && session.rows === rows) return true;
+
+    const pid = session.pty.pid;
+    if (pid !== undefined && !this.isProcessAlive(pid)) return false;
+
     session.cols = cols;
     session.rows = rows;
     session.pty.resize(cols, rows);

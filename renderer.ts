@@ -336,6 +336,7 @@ async function copySelection(term: InstanceType<typeof Terminal>) {
 function removePane(id: string) {
   const pane = panes.get(id);
   if (!pane) return;
+  cancelPtyResize(id);
   pane.term.dispose();
   pane.el.remove();
   panes.delete(id);
@@ -380,16 +381,66 @@ function applyMaximize() {
   panes.forEach(fit);
 }
 
+/**
+ * pty へのリサイズ要求をまとめる。
+ *
+ * ペインを作った直後はレイアウトが 2 段階で確定するため 80x24 → 79x24 →
+ * 実寸と要求が続けて飛ぶ。node-pty の resize はメインプロセスの上で同期的に
+ * 走るので、ConPTY が返さなければアプリ全体が固まる（#16）。呼ぶ回数は
+ * 減らしておくに越したことがない。
+ *
+ * 画面側の見た目は fit() がすぐ合わせる。ここで遅らせるのは pty へ伝える
+ * ぶんだけなので、体感は変わらない。
+ */
+const RESIZE_QUIET_MS = 150;
+const resizeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function requestPtyResize(pane: Pane) {
+  const pending = resizeTimers.get(pane.id);
+  if (pending !== undefined) clearTimeout(pending);
+
+  resizeTimers.set(
+    pane.id,
+    setTimeout(() => {
+      resizeTimers.delete(pane.id);
+      // 待っている間に閉じられたペインには送らない
+      if (!panes.has(pane.id)) return;
+      api.resize(pane.id, pane.term.cols, pane.term.rows);
+    }, RESIZE_QUIET_MS)
+  );
+}
+
+/** 保留中のリサイズ要求を取り消す。 */
+function cancelPtyResize(id: string) {
+  const pending = resizeTimers.get(id);
+  if (pending === undefined) return;
+  clearTimeout(pending);
+  resizeTimers.delete(id);
+}
+
+/**
+ * ペインの大きさに端末を合わせる。
+ *
+ * **大きさが変わらないときは何もしない。** ここは ResizeObserver から呼ばれる
+ * ので、毎回 fit すると「fit → DOM の寸法が変わる → ResizeObserver → fit」で
+ * 回り続ける。出力が増えてスクロールバーが出入りすると幅が二値の間で振動し、
+ * 収束しない。実際、実 pty のペインを作るとレンダラが応答を返さなくなっていた。
+ */
 function fit(pane: Pane) {
   // 隠れているペインは測れない。測ると 0 桁になり、その値で pty を
   // リサイズしてしまう
   if (pane.el.offsetParent === null) return;
 
   try {
+    const next = pane.fitAddon.proposeDimensions();
+    if (!next || !Number.isFinite(next.cols) || !Number.isFinite(next.rows)) return;
+    if (next.cols === pane.term.cols && next.rows === pane.term.rows) return;
+
+    // 画面はすぐ合わせる。pty へ伝えるのは落ち着いてから
     pane.fitAddon.fit();
-    api.resize(pane.id, pane.term.cols, pane.term.rows);
+    requestPtyResize(pane);
   } catch {
-    // レイアウト確定前は fit が失敗することがあるので無視する
+    // レイアウト確定前は測れないことがあるので無視する
   }
 }
 
