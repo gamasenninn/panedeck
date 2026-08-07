@@ -2,232 +2,239 @@
 
 [![Tests](https://github.com/gamasenninn/panedeck/actions/workflows/test.yml/badge.svg)](https://github.com/gamasenninn/panedeck/actions/workflows/test.yml)
 
-複数のコーディングエージェントのセッションをグリッド分割ペインで同時に走らせ、まとめて操作するための Electron ターミナルアプリ。
+[日本語版 README](README.ja.md)
 
-## これは何か
+An Electron terminal app for running several coding-agent sessions side by side in a grid of panes, and driving them together.
 
-リポジトリごとにコーディングエージェントを立ち上げて並行作業していると、ターミナルのタブを行ったり来たりして「どれが入力待ちで止まっているか」が分からなくなる。PaneDeck は全セッションを 1 画面に並べ、状態をバッジで示し、同じ指示をまとめて送れるようにする。
+## What it is
 
-起動するのは任意のコマンドなので、CLI で動くエージェントであれば何でも並べられる。状態判定のパターンを同梱しているのは Claude Code と Codex。
+Running a coding agent per repository means cycling through terminal tabs to find out which one has stopped and is waiting for you. PaneDeck puts every session on one screen, shows what each is doing as a badge, and lets one instruction go to several of them at once.
+
+It launches whatever command you give it, so any agent with a CLI can sit in a pane. Waiting-detection patterns ship for Claude Code and Codex.
 
 ```
-┌─────────────┬─────────────┐
-│ repo-a  実行中 │ repo-b 入力待ち │
-│ $ claude    │ $ codex     │
-├─────────────┼─────────────┤
-│ repo-c  待機   │ repo-d   終了  │
-│ $ claude    │ $ codex     │
-└─────────────┴─────────────┘
-[入力待ちのみ ☑][ 送信先: 入力待ち 1 ペイン ][ ____ ][送信] [Enter][Esc][Ctrl+C][↑][↓]
+┌──────────────────┬──────────────────┐
+│ repo-a   running │ repo-b   waiting │
+│ $ claude         │ $ codex          │
+├──────────────────┼──────────────────┤
+│ repo-c   idle    │ repo-d   exited  │
+│ $ claude         │ $ codex          │
+└──────────────────┴──────────────────┘
+[x] waiting only    sending to: 1 waiting pane    [______] [Send]
+[Enter] [Esc] [Ctrl+C] [↑] [↓]
 ```
 
-## 動作環境
+**The interface is in Japanese.** The code and this document are not, but the buttons and labels you will see are. See [known limitations](#known-limitations).
 
-- Node.js v18+
-- Electron v40.x
-- Windows / macOS / Linux（シェルは OS 既定を使用）
+## Requirements
 
-## セットアップ
+- Node.js 24 (what development and CI run on; older versions are untested)
+- Electron 40.x
+- **Windows.** macOS and Linux are untested — see below
+
+Nothing in the code is deliberately Windows-only: node-pty and xterm.js are cross-platform, and the default shell is chosen per platform. But the app has only ever been run on Windows, and the pty layer is exactly where platforms diverge. The one bug that froze the entire app ([#16](https://github.com/gamasenninn/panedeck/issues/16)) was a ConPTY deadlock and could not have appeared anywhere else. Treat other platforms as unknown rather than broken.
+
+## Setup
 
 ```bash
 cd panedeck
 npm install
-npm start        # TypeScript をビルドしてから Electron を起動
+npm start        # compiles TypeScript, then launches Electron
 ```
 
-`node-pty` は N-API のプリビルドを同梱しているため、**再ビルドは通常不要**。N-API は Node と Electron のあいだで ABI が安定しているので、`npm run rebuild` を走らせなくても動く。読み込みに失敗する環境に当たったときだけ実行する。
+`node-pty` ships N-API prebuilds, so **rebuilding is normally unnecessary** — N-API keeps its ABI stable across Node and Electron. Run `npm run rebuild` only if you land on an environment where the module fails to load.
 
-## パッケージング
+## Packaging
 
 ```bash
-npm run icon     # build/icon.svg → build/icon.png（アイコンを変えたときだけ）
-npm run pack     # 実行ファイル一式を release/win-unpacked/ に出す（インストーラは作らない）
-npm run dist     # インストーラ / 可搬版を release/ に出す
+npm run icon     # build/icon.svg -> build/icon.png (only when the icon changes)
+npm run pack     # unpacked build in release/win-unpacked/ (no installer)
+npm run dist     # installer and portable build in release/
 ```
 
-Windows では NSIS インストーラ（`PaneDeck Setup <version>.exe`）と可搬版（`PaneDeck <version>.exe`）が生成される。設定は `electron-builder.yml`。
+On Windows this produces an NSIS installer (`PaneDeck Setup <version>.exe`) and a portable build (`PaneDeck <version>.exe`). Configuration lives in `electron-builder.yml`.
 
-アイコンは `build/icon.png`（1024x1024）1 枚あれば、`.ico` / `.icns` は electron-builder が生成する。元データは `build/icon.svg` で、そこから `scripts/make-icon.mjs` が PNG を作る。
+One `build/icon.png` at 1024x1024 is enough; electron-builder derives `.ico` and `.icns` from it. The source of truth is `build/icon.svg`, and `scripts/make-icon.mjs` renders the PNG.
 
-### パッケージング時の注意
+### Packaging notes
 
-- **`npmRebuild: false` にしてある。** node-pty のプリビルドをそのまま使うため。ソースからの再ビルドを走らせると、winpty の `GetCommitHash.bat` が無くて node-gyp が失敗する
-- **node-pty は `asarUnpack` で展開している。** conpty の補助実行ファイルを同梱しており、asar の中の実行ファイルは起動できない
+- **`npmRebuild: false`.** The point is to use node-pty's prebuilds as they are. Rebuilding from source fails in node-gyp because winpty's `GetCommitHash.bat` is missing.
+- **node-pty is listed under `asarUnpack`.** It carries the ConPTY helper executable, and executables inside an asar archive cannot be launched.
 
-### 生成物の検証
+### Verifying the build
 
 ```bash
-npm run test:packaged   # pack してから、生成物を実際に起動して検証する
+npm run test:packaged   # packs, then launches the result and checks it
 ```
 
-パッケージ版だけで起きる問題（asar からファイルが読めない、ネイティブモジュールが読み込めない、ESM の解決に失敗する）を捕まえるためのテスト。開発時のテストでは通らない経路なので分けてある。
+This covers the failures that only exist in a packaged app: files unreadable inside the asar, native modules that will not load, ESM resolution that breaks. None of those paths are exercised by the development tests, which is why they are a separate suite.
 
-## 機能
+## Features
 
-### 複数ターミナルのグリッド表示
+### A grid of terminals
 
-各ペインは独立した pty プロセスを持ち、xterm.js で描画される。ペインをクリックするとフォーカスが移り、キー入力はそのセッションにだけ届く。
+Every pane owns an independent pty process and is drawn by xterm.js. Clicking a pane moves focus, and keystrokes reach that session alone.
 
-列数はツールバーで指定できる（自動 / 1〜6）。自動は幅に応じて折り返す。
+The column count is set in settings (auto, or 1 to 6). Auto wraps to fit the width.
 
-### 1 ペインの拡大
+### Maximising one pane
 
-ペインヘッダの **拡大** で、そのペインだけを全面に出す。**戻す** で元の並びに戻る。
+**拡大** ("maximise") in a pane header brings that pane to full view; **戻す** ("restore") returns to the grid.
 
-グリッドを畳んで他を隠すだけなので、**端末は作り直されない** — pty との接続もスクロールバックもそのまま。拡大に合わせて桁数・行数は測り直される。
+This only collapses the grid and hides the others, so **the terminal is never rebuilt** — the pty connection and the scrollback survive. Columns and rows are re-measured to match the new size.
 
-見え方だけの状態で、保存しない。**送信先の決まり方にも影響しない**（拡大しただけで一斉入力の行き先が変わると驚くため）。拡大中のペインを閉じれば自動で元の並びに戻る。
+It is presentation only and is not persisted. It also **does not change where broadcasts go**: having a pane grow should not quietly redirect your input. Closing a maximised pane drops back to the grid on its own.
 
-### ペインの並べ替え
+### Reordering panes
 
-ペインのヘッダを掴んでドラッグすると並べ替えられる。並び順はメインプロセスが持ち、構成の保存・復元でも再現する。端末は作り直されないので、並べ替えても接続もスクロールバックも切れない。
+Drag a pane by its header. The order lives in the main process and is reproduced when a layout is saved and restored. Terminals are not rebuilt, so neither the connection nor the scrollback is lost.
 
-### エージェントプロファイル
+### Agent profiles
 
-ツールバーの **エージェント** で切り替えると、起動コマンドと**入力待ちの判定パターン**がセットで変わる。起動コマンドは後から手で書き換えてもよい（どのバイナリを起動するかと、どのパターンで判定するかは別の選択）。
+Switching agent in the toolbar changes the launch command **and the waiting-detection patterns** together. The launch command can still be edited by hand afterwards — which binary to start and which patterns to judge it by are separate choices.
 
-同梱しているのは **Claude Code / Codex / シェル**。どちらのエージェントも実機のログからパターンを採取して確かめてある。**実機で確かめたものだけを足す方針**で、当て推量の正規表現は入れない（誤判定は取りこぼしより悪い）。
+Claude Code, Codex and a plain shell ship with the app. Patterns for both agents were taken from real session logs and verified against them. **Only what has been verified gets added**; no guessed regular expressions, because a false positive is worse than a miss.
 
-Gemini CLI は一度入れたが外した。判定自体はできていたが、実機で日本語を入力できず（PaneDeck からは UTF-8 で正しく届いていることを確認済みなので、受け取る側の問題）、CLI 自体が更新の対象から外れているように見えたため。`agent: "gemini"` を含む古い構成を読んでも壊れず、既定の Claude Code として扱われる。
+Gemini CLI was included once and then removed. Detection worked, but Japanese input never reached it (PaneDeck was confirmed to be sending correct UTF-8, so the problem was on the receiving side) and the CLI appeared to have stopped being maintained. Old layouts containing `agent: "gemini"` still load and fall back to Claude Code.
 
-### セッションの追加
+### Adding a session
 
-**+ セッション追加** でディレクトリを選ぶと、そこを cwd としてシェルが起動し、**起動コマンド** 欄の内容が流し込まれる。空にすれば素のシェルが開く。起動コマンドはセッションごとに記憶され、ペインのヘッダに表示される。
+**+ セッション追加** ("add session") asks for a directory, starts a shell with it as the working directory, and feeds in whatever is in the launch command field. Leave that empty for a bare shell. The launch command is remembered per session and shown in the pane header.
 
-### 一斉入力（Broadcast）
+### Broadcast
 
-下部の入力欄に打った内容を、複数ペインへまとめて送る。
+What you type in the bar at the bottom goes to several panes at once.
 
-- チェックボックスが**どれも未選択なら全ペイン**、チェックがあれば**そのペインだけ**
-- **入力待ちのみ** を有効にすると、**入力待ちで止まっているペインだけ**に絞られる。選択と併用すると積になる
-- 絞り込みはメインプロセスが送信時点の状態で判定する（レンダラの表示は最大 300ms 古いため）
-- 該当が 0 件なら何も送らず、入力欄も消さない
+- With **no** pane checkboxes ticked it goes to every pane; with some ticked, only to those
+- **入力待ちのみ** ("waiting only") narrows it to panes that are stopped waiting for input. Combined with checkboxes, both conditions apply
+- The filtering happens in the main process against the state at send time — what the renderer displays can be up to 300ms stale
+- If nothing matches, nothing is sent and the input is not cleared
 
-### 特殊キーの送信
+### Special keys
 
-| ボタン | 送信されるシーケンス | 用途 |
+| Button | Sequence | Use |
 |---|---|---|
-| Enter | `\r` | 確認プロンプトの決定 |
-| Esc | `\x1b` | 実行中の処理を中断 |
-| Ctrl+C | `\x03` | プロセスに割り込み |
-| ↑ / ↓ | `\x1b[A` / `\x1b[B` | 選択肢の移動、履歴呼び出し |
+| Enter | `\r` | Answer a confirmation prompt |
+| Esc | `\x1b` | Interrupt what is running |
+| Ctrl+C | `\x03` | Interrupt the process |
+| ↑ / ↓ | `\x1b[A` / `\x1b[B` | Move through choices, recall history |
 
-送信先の決まり方は一斉入力と同じ。「止まっているペインにだけ Enter」がこの機能の主用途。
+Targets are chosen the same way as broadcasts. "Send Enter, but only to the panes that are stopped" is what this is for.
 
-### 入力欄での改行
+### Newlines in an agent's input box
 
-エージェントの入力欄で改行を入れたいとき:
+To insert a line break rather than submitting:
 
-| キー | 送られるもの |
+| Key | What is sent |
 |---|---|
-| `Ctrl+Enter` / `Shift+Enter` | `ESC CR`（改行として扱われる） |
-| `Alt+Enter` | 同上（xterm が元から送る形） |
+| `Ctrl+Enter` / `Shift+Enter` | `ESC CR`, which is treated as a newline |
+| `Alt+Enter` | The same (what xterm sends natively) |
 | `Ctrl+J` | `LF` |
-| `Enter` | `CR`（従来どおり確定） |
+| `Enter` | `CR` — submits, as always |
 
-端末は伝統的に `Ctrl+Enter` と `Enter` を区別せず、**どちらも `CR` を送る**。受け取る側には同じバイトなので確定と解釈される。区別するには `modifyOtherKeys` や Kitty のキーボードプロトコルのような拡張が要るため、PaneDeck では拡張を実装せず、改行として通る `ESC CR` へ差し替えている。
+Terminals traditionally do not distinguish `Ctrl+Enter` from `Enter`: **both send `CR`**, identical bytes to whatever is reading, so both mean submit. Telling them apart needs an extension such as `modifyOtherKeys` or the Kitty keyboard protocol. PaneDeck implements no extension and substitutes `ESC CR`, which passes as a newline.
 
-修飾なしの `Enter` は変えていない（奪うと確定できなくなる）。ツールバーの **Enter** ボタンも確定のままで、こちらは「止まっているペインを進める」ためのもの。
+Unmodified `Enter` is left alone — taking it would leave you unable to submit anything. The toolbar's **Enter** button also still submits; its job is to move a stopped pane along.
 
-### コピー
+### Copy
 
-端末で文字を選択してから:
+Select text in a terminal, then:
 
-| キー | 動き |
+| Key | Behaviour |
 |---|---|
-| `Ctrl+Shift+C` | 選択範囲をコピー |
-| `Ctrl+Insert` | 同上 |
-| `Ctrl+C`（**選択があるとき**） | コピー。pty へ中断は送らない |
-| `Ctrl+C`（選択が無いとき） | 従来どおり中断（`\x03`）を送る |
+| `Ctrl+Shift+C` | Copy the selection |
+| `Ctrl+Insert` | The same |
+| `Ctrl+C` **with a selection** | Copy. No interrupt reaches the pty |
+| `Ctrl+C` with no selection | Interrupt (`\x03`), as always |
 
-コピーすると選択は解除される。解除しないと次の `Ctrl+C` もコピーになり、実行中のコマンドを止められなくなるため。
+Copying clears the selection. Without that, the next `Ctrl+C` would copy as well, leaving no way to stop a running command.
 
-xterm は入力をそのまま pty へ流すので、何もしないと `Ctrl+C` は中断として送られる。Electron 既定メニューの Edit → Copy も効かない（あちらは DOM の選択範囲が対象で、xterm の選択は DOM の選択ではない）。
+xterm passes input straight through to the pty, so untouched, `Ctrl+C` is an interrupt and nothing else. Electron's built-in Edit → Copy does not help either: it works on the DOM selection, and an xterm selection is not one.
 
-### 状態の可視化
+### Status
 
-| バッジ | 意味 | 判定条件 |
+| Badge | Meaning | Rule |
 |---|---|---|
-| 実行中 | 処理が動いている | 直近 400ms 以内に出力がある |
-| 入力待ち | **ユーザーの操作が必要** | 出力が止まり、末尾がプロファイルの待機パターンに一致 |
-| 待機 | 何も走っていない | 出力が止まり、待機パターンに当てはまらない |
-| 終了 | プロセスが終了した | pty の exit を受信 |
+| 実行中 (running) | Something is happening | Output within the last 400ms |
+| 入力待ち (waiting) | **You need to do something** | Output stopped and the tail matches the profile's waiting patterns |
+| 待機 (idle) | Nothing is running | Output stopped, no pattern matched |
+| 終了 (exited) | The process ended | The pty reported an exit |
 
-判定は `lib/status-detector.ts` の純粋関数で、末尾 10 行だけを見る。
+Detection is a pure function in `lib/status-detector.ts` and looks at the last 10 lines only.
 
-### 文字サイズ
+### Settings
 
-ツールバーで端末の文字サイズを変えられる（8〜32）。設定は保存され、再起動しても維持される。
+The gear button in the toolbar opens a dialog: font size (8 to 32), column count, restore on start, log auto-save, log directory, ANSI stripping, retention days and total size cap. Everything there is persisted and survives a restart.
 
-### 出力ログ
+### Output logs
 
-- ペインの **ログ** ボタンで、そのセッションの全出力をファイルに保存する
-- **ログ自動保存**（既定で有効）は、セッションごとにファイルへ追記していく
+- The **ログ** ("log") button in a pane header writes that session's entire output to a file
+- **Log auto-save** appends to a per-session file as output arrives
 
-出力先は既定で userData 配下の `logs/`。`settings.json` の `logDir` で変えられる。ANSI エスケープは既定で除去する（`logStripAnsi`）。
+Files go under `logs/` in userData by default; the directory is configurable. ANSI escapes are stripped by default.
 
-### 古いログの片付け
+### Cleaning up old logs
 
-起動時に、保持期間を過ぎたログと合計サイズを超えた分（古い順）を消す。
+On startup, logs past the retention period and the oldest files above the total size cap are deleted.
 
-| 設定 | 既定 | 意味 |
+| Setting | Default | Meaning |
 |---|---|---|
-| `logRetentionDays` | 30 | 保持日数。`0` なら期間では消さない |
-| `logMaxTotalMB` | 500 | 合計サイズの上限。`0` ならサイズでは消さない |
+| Retention days | 30 | `0` disables expiry by age |
+| Total size cap (MB) | 500 | `0` disables expiry by size |
 
-両方 `0` にすれば片付けは実質無効になる。
+Setting both to `0` effectively turns cleanup off.
 
-**PaneDeck が作ったログ以外は絶対に消さない。** 出力先に `.panedeck-logs.json` という索引を置き、**そこに載っているファイルだけ**を削除の候補にする。ファイル名の形で判別すると、出力先に置かれた別のファイルを巻き込む恐れがあるため、「自分が作った」という記録そのものを根拠にしている。索引が読めないときは何も消さない。
+**PaneDeck never deletes a file it did not create.** An index, `.panedeck-logs.json`, is kept alongside the logs, and **only files recorded there** are candidates for deletion. Matching on filename patterns could catch somebody else's file that happens to sit in the same directory, so the record of "I wrote this" is the authority instead. If the index cannot be read, nothing is deleted.
 
-### セッション構成の保存・復元
+### Saving and restoring a layout
 
-**構成を保存** で、並んでいるセッションの `title` / `cwd` / `shell` / `args` / 起動コマンド / エージェント を JSON に書き出す。並び順は配列の順そのもの。id や実行状態は保存しない。
+**構成を保存** ("save layout") writes each session's `title`, `cwd`, `shell`, `args`, launch command and agent to JSON, in the order shown. Session ids and runtime state are not saved.
 
-**起動時に復元** を有効にしておくと、セッションの増減のたびに構成が自動で控えられ、次回起動時にそのまま並ぶ。
+With **restore on start** enabled, the layout is captured whenever sessions are added or removed, and comes back on the next launch.
 
-## プロジェクト構造
+## Project layout
 
 ```
 panedeck/
-├── main.ts              # メインプロセス（IPC ハンドラ）
-├── preload.ts           # contextBridge で API を Renderer に公開
-├── index.html           # グリッド UI レイアウト・CSS
-├── renderer.ts          # ペイン管理・xterm 接続・ブロードキャスト
-├── renderer/            # レンダラ側の分割モジュール
-├── lib/                 # Electron 非依存のロジック
-│   ├── session-manager.ts   # pty セッションのレジストリ（コアロジック）
-│   ├── status-detector.ts   # 出力から状態を判定する純粋関数
-│   ├── agent-profiles.ts    # エージェント定義
-│   ├── command.ts           # 起動コマンドの正規化
-│   ├── settings.ts          # アプリ設定の読み書き
-│   ├── log-writer.ts        # 出力のバッファリングとファイル追記
-│   └── workspace.ts         # セッション構成の保存・復元
-├── types/               # 層をまたぐ型定義
-├── build/               # アイコン（svg が正、png は生成物）
-├── scripts/             # ビルド補助
+├── main.ts              # main process (IPC handlers)
+├── preload.ts           # exposes the API to the renderer via contextBridge
+├── index.html           # grid layout and CSS
+├── renderer.ts          # panes, xterm wiring, broadcast
+├── renderer/            # renderer-side modules
+├── lib/                 # logic with no Electron dependency
+│   ├── session-manager.ts   # registry of pty sessions (the core)
+│   ├── status-detector.ts   # pure functions deciding state from output
+│   ├── agent-profiles.ts    # agent definitions
+│   ├── command.ts           # launch command normalisation
+│   ├── settings.ts          # reading and writing settings
+│   ├── log-writer.ts        # buffering output and appending to files
+│   └── workspace.ts         # saving and restoring layouts
+├── types/               # types shared across layers
+├── build/               # icon (svg is the source, png is generated)
+├── scripts/             # build helpers
 └── tests/
-    ├── unit/            # lib/ のロジック単体テスト（Electron 不要）
-    ├── e2e/             # Playwright + Electron の E2E テスト
-    └── packaged/        # パッケージ版の生成物を起動して検証
+    ├── unit/            # logic tests for lib/ (no Electron)
+    ├── e2e/             # Playwright + Electron
+    └── packaged/        # launches the packaged build and checks it
 ```
 
-ビルド出力は `dist/`（コミットしない）。
+Build output goes to `dist/`, which is not committed.
 
-### 設計方針
+### Design
 
-ロジックを `lib/` に切り出し、Electron にも node-pty にも依存させていない。
+Logic lives in `lib/` and depends on neither Electron nor node-pty.
 
-- `SessionManager` は pty の生成関数を**依存性注入**で受け取る。テストではフェイクを渡すので、実プロセスを起動せずに検証できる
-- `status-detector.ts` は状態を持たない純粋関数のみ
-- 時刻取得も注入されるので、状態遷移を実時間に頼らず決定的にテストできる
-- 設定やログの保存先パスも注入する。テストが実ユーザーの userData を汚さない
+- `SessionManager` takes its pty factory by **dependency injection**. Tests pass a fake, so nothing is verified by starting real processes
+- `status-detector.ts` holds no state — pure functions only
+- The clock is injected too, so state transitions are tested deterministically rather than against wall time
+- Paths for settings and logs are injected as well, so tests never touch a real user's data
 
-## アーキテクチャ
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
-│  Main Process (main.ts)                     │
-│  SessionManager → node-pty × N              │
+│  Main process (main.ts)                     │
+│  SessionManager -> node-pty x N             │
 │  LogWriter / Settings / Workspace           │
 │         ▲                                   │
 │         │ ipcMain.handle() / ipcMain.on()   │
@@ -235,76 +242,77 @@ panedeck/
           │ IPC
 ┌─────────┼───────────────────────────────────┐
 │  Preload (preload.ts)                       │
-│  contextBridge → window.deck  (DeckApi)     │
+│  contextBridge -> window.deck  (DeckApi)    │
 └─────────┼───────────────────────────────────┘
           │
 ┌─────────┼───────────────────────────────────┐
 │  Renderer (renderer.ts + index.html)        │
-│  xterm.js × N をグリッドに配置               │
+│  xterm.js x N arranged in a grid            │
 └─────────────────────────────────────────────┘
 ```
 
-- `contextIsolation: true` / `nodeIntegration: false`
-- CSP を `<meta>` タグで設定（`script-src 'self'`）
-- 戻り値が要る操作は `invoke` / `handle`、キー入力とリサイズは高頻度なので `send` / `on`
-- レンダラは ES モジュールとして読み込む。バンドラは挟まないので、相対 import には拡張子 `.js` が要る
+- `contextIsolation: true`, `nodeIntegration: false`
+- CSP set through a `<meta>` tag (`script-src 'self'`)
+- Operations that return something use `invoke`/`handle`; keystrokes and resizes are frequent enough to use `send`/`on`
+- The renderer is loaded as ES modules. There is no bundler, so relative imports carry a `.js` extension
 
-レンダラはメインプロセスのセッション一覧を 300ms ごとに突き合わせてペインを増減させる。**並び順も状態もメインプロセスが持つ**ので、ポーリングで表示が巻き戻る事故が起きない。
+The renderer reconciles its panes against the main process's session list every 300ms. **Both the order and the state belong to the main process**, so polling can never roll the display back.
 
-### IPC チャンネル一覧
+### IPC channels
 
-| チャンネル名 | 方向 | メソッド | 説明 |
+| Channel | Direction | Method | Purpose |
 |---|---|---|---|
-| `session:create` | R → M | invoke/handle | セッション生成 |
-| `session:list` | R → M | invoke/handle | セッション一覧（状態込み） |
-| `session:close` | R → M | invoke/handle | 個別終了 |
-| `session:closeAll` | R → M | invoke/handle | 全終了 |
-| `session:reorder` | R → M | invoke/handle | 並び順の変更 |
-| `session:broadcast` | R → M | invoke/handle | 一斉入力（状態で絞り込み可） |
-| `session:pickDirectory` | R → M | invoke/handle | ディレクトリ選択ダイアログ |
-| `clipboard:write` | R → M | invoke/handle | 選択範囲をクリップボードへ |
-| `session:input` | R → M | send/on | キー入力を pty へ転送 |
-| `session:resize` | R → M | send/on | ターミナルサイズ同期 |
-| `session:data` | M → R | send/on | pty 出力をレンダラへ |
-| `session:exit` | M → R | send/on | プロセス終了通知 |
-| `agent:list` | R → M | invoke/handle | エージェントプロファイル一覧 |
-| `settings:get` / `settings:set` | R → M | invoke/handle | アプリ設定 |
-| `log:get` | R → M | invoke/handle | 蓄積ログ取得 |
-| `log:save` | R → M | invoke/handle | ログをファイルに保存 |
-| `log:error` | M → R | send/on | ログ書き込み失敗の通知 |
-| `workspace:save` | R → M | invoke/handle | 構成を保存 |
-| `workspace:restore` | R → M | invoke/handle | 構成を復元して一括起動 |
+| `session:create` | R → M | invoke/handle | Create a session |
+| `session:list` | R → M | invoke/handle | List sessions, with state |
+| `session:close` | R → M | invoke/handle | Close one |
+| `session:closeAll` | R → M | invoke/handle | Close all |
+| `session:reorder` | R → M | invoke/handle | Change the order |
+| `session:broadcast` | R → M | invoke/handle | Broadcast, optionally filtered by state |
+| `session:pickDirectory` | R → M | invoke/handle | Directory picker |
+| `clipboard:write` | R → M | invoke/handle | Copy a selection |
+| `session:input` | R → M | send/on | Forward keystrokes to the pty |
+| `session:resize` | R → M | send/on | Sync terminal size |
+| `session:data` | M → R | send/on | pty output to the renderer |
+| `session:exit` | M → R | send/on | Process exit |
+| `agent:list` | R → M | invoke/handle | Agent profiles |
+| `settings:get` / `settings:set` | R → M | invoke/handle | Settings |
+| `log:get` | R → M | invoke/handle | Accumulated log |
+| `log:save` | R → M | invoke/handle | Write a log to a file |
+| `log:error` | M → R | send/on | A log write failed |
+| `workspace:save` | R → M | invoke/handle | Save a layout |
+| `workspace:restore` | R → M | invoke/handle | Restore a layout and start everything |
 
-## テスト
+## Tests
 
-TDD で開発している。
+Development is test-first.
 
 ```bash
-npm test              # 型検査 + ビルド + 単体 + E2E
-npm run typecheck     # 型検査のみ
-npm run test:unit     # ロジック単体テストのみ（高速、Electron 不要）
-npm run test:e2e      # Electron E2E のみ
-npm run test:headed   # ウィンドウを表示して E2E（動きを目で追いたいとき）
-npm run test:packaged # パッケージ版の生成物を検証
+npm test              # typecheck + build + unit + e2e
+npm run typecheck
+npm run test:unit     # logic only — fast, no Electron
+npm run test:e2e
+npm run test:headed   # e2e with the window on screen, to watch it work
+npm run test:packaged
 npm run test:report
 ```
 
-E2E は既定でウィンドウが画面に出ない。Electron には Chromium のような真のヘッドレスが無いので、**ウィンドウを画面の外へ置いている**（隠しているのではない）。
+The e2e windows do not appear on screen. Electron has no true headless mode like Chromium's, so **the window is placed off-screen** rather than hidden.
 
-`show: false` でも目には触れないが、Chromium がフレームを作らなくなり Playwright の安定性チェックが毎回待たされる。実測で 1 スイート 9 秒が 59 秒、全体では 2.3 分が 11.6 分に膨らんだ。省電力系のスイッチを切っても変わらない。画面外なら描画は続くので、速度を落とさずに済む。
+`show: false` also keeps it out of sight, but Chromium then stops producing frames and every Playwright stability check waits. Measured: one suite went from 9 seconds to 59, and the full run from 2.3 minutes to 11.6. Backgrounding switches made no difference. Off-screen keeps compositing alive, so nothing is paid for the privacy.
 
-E2E は `global.__sessionManager.ptyFactory` をフェイクに差し替えて実プロセス無しで検証する。時計も差し替えられるので、状態遷移のテストが実時間に左右されない。`real-pty.spec.ts` と自動復元のテストだけはフェイクを使わず、実際にプロセスを起動する。
+E2E swaps `global.__sessionManager.ptyFactory` for a fake, so almost nothing needs real processes, and the clock can be replaced so state-transition tests do not depend on wall time. Only `real-pty.spec.ts` and the auto-restore tests start real ones.
 
-## 既知の制限
+## Known limitations
 
-- 状態判定はヒューリスティック。同梱プロファイル以外のエージェントを並べる場合、確認プロンプト（`(y/n)` など）以外は拾えない
-- ログの出力先・保持期間・エージェントのパターンは、設定ファイルを直接編集しないと変えられない（UI が無い）
-- ログの片付けは索引に載っているものだけが対象。出力先を変えると前の場所のログは片付かなくなる（「消せない」方向に倒れるので実害は小さい）
-- 自動保存（構成・ログ）の書き込み失敗は通知されないものがある。構成の自動控えは失敗しても黙って諦める
+- **The interface is in Japanese.** Buttons, labels and status badges are not translated
+- Only Windows is verified. See [requirements](#requirements)
+- Status detection is a heuristic. For agents beyond the bundled profiles, nothing but confirmation prompts such as `(y/n)` will be recognised
+- Adding an agent profile means editing `lib/agent-profiles.ts`; there is no UI for it
+- Log cleanup only considers files in its index. Change the output directory and the logs in the old one stop being cleaned — it fails towards keeping files, so the damage is small
+- Some auto-save failures are not reported. The automatic layout capture gives up silently
 
-## ライセンス
+## License
 
 [MIT](LICENSE) — Copyright (c) 2026 Satoshi Ono
 
-同梱している主なものはいずれも MIT: [Electron](https://github.com/electron/electron) /
-[node-pty](https://github.com/microsoft/node-pty) / [xterm.js](https://github.com/xtermjs/xterm.js)。
+The main things bundled are MIT as well: [Electron](https://github.com/electron/electron), [node-pty](https://github.com/microsoft/node-pty) and [xterm.js](https://github.com/xtermjs/xterm.js).
