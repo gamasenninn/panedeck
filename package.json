@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "main": "dist/main.js",
   "description": "PaneDeck - 複数のコーディングエージェントのセッションをグリッドで一括操作するターミナルアプリ",
-  "license": "ISC",
+  "license": "MIT",
   "scripts": {
     "start": "npm run build && electron .",
     "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.renderer.json",

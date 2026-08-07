@@ -299,3 +299,10 @@ E2E は `global.__sessionManager.ptyFactory` をフェイクに差し替えて�
 - ログの出力先・保持期間・エージェントのパターンは、設定ファイルを直接編集しないと変えられない（UI が無い）
 - ログの片付けは索引に載っているものだけが対象。出力先を変えると前の場所のログは片付かなくなる（「消せない」方向に倒れるので実害は小さい）
 - 自動保存（構成・ログ）の書き込み失敗は通知されないものがある。構成の自動控えは失敗しても黙って諦める
+
+## ライセンス
+
+[MIT](LICENSE) — Copyright (c) 2026 Satoshi Ono
+
+同梱している主なものはいずれも MIT: [Electron](https://github.com/electron/electron) /
+[node-pty](https://github.com/microsoft/node-pty) / [xterm.js](https://github.com/xtermjs/xterm.js)。
