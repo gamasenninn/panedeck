@@ -97,8 +97,6 @@ test("変更後に作ったペインにも現在値が適用される", async ()
 });
 
 test("変更で再フィットが走り、pty 側の桁数・行数も変わる", async () => {
-  // 画面はすぐ合うが、pty へ伝わるのは要求が静まってから（#16）。
-  // 桁数が届くまで待ってから比べる
   const ptySize = async () => {
     const session = (await listSessions(electronApp))[0];
     return { cols: session.cols, rows: session.rows };
@@ -107,29 +105,20 @@ test("変更で再フィットが走り、pty 側の桁数・行数も変わる"
   await givenPanes(1);
   await setFontSize(10);
   await expect.poll(paneFontSizes).toEqual([10]);
-  const small = await waitForStableSize(ptySize);
+  const small = await ptySize();
 
   await setFontSize(24);
   await expect.poll(paneFontSizes).toEqual([24]);
-  const large = await waitForStableSize(ptySize, small);
 
-  // 文字が大きくなれば同じ幅に入る桁数は減る
-  expect(large.cols).toBeLessThan(small.cols);
-  expect(large.rows).toBeLessThan(small.rows);
+  // 画面はすぐ合うが、pty へ伝わるのは要求が静まってから（#16）。
+  //
+  // 「前回と変わったか」で待ってはいけない。文字サイズ 10 のぶんの要求がまだ
+  // 保留されていると、その到着を掴んでしまう（CI でこれを踏んだ）。
+  // 求める関係そのものが成り立つまで待つ。small が 1 段階前の寸法だった
+  // としても、文字を大きくすれば桁数は必ず減るので、この待ち方なら成立する
+  await expect.poll(async () => (await ptySize()).cols).toBeLessThan(small.cols);
+  await expect.poll(async () => (await ptySize()).rows).toBeLessThan(small.rows);
 });
-
-/** pty 側の寸法が届く（前回と変わる）まで待って、その値を返す。 */
-async function waitForStableSize(
-  read: () => Promise<{ cols: number; rows: number }>,
-  previous?: { cols: number; rows: number }
-) {
-  if (previous) {
-    await expect
-      .poll(async () => JSON.stringify(await read()))
-      .not.toBe(JSON.stringify(previous));
-  }
-  return read();
-}
 
 test.describe("範囲外の入力", () => {
   test("大きすぎる値は上限に丸められる", async () => {
