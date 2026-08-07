@@ -12,17 +12,9 @@ Running a coding agent per repository means cycling through terminal tabs to fin
 
 It launches whatever command you give it, so any agent with a CLI can sit in a pane. Waiting-detection patterns ship for Claude Code and Codex.
 
-```
-┌──────────────────┬──────────────────┐
-│ repo-a   running │ repo-b   waiting │
-│ $ claude         │ $ codex          │
-├──────────────────┼──────────────────┤
-│ repo-c   idle    │ repo-d   exited  │
-│ $ claude         │ $ codex          │
-└──────────────────┴──────────────────┘
-[x] waiting only    sending to: 1 waiting pane    [______] [Send]
-[Enter] [Esc] [Ctrl+C] [↑] [↓]
-```
+![Four panes running side by side. Two stop at a confirmation prompt and their badges turn to "waiting"; one Enter goes to those two alone and both carry on; one pane is then maximised and dropped back into the grid.](docs/demo.gif)
+
+Recorded by `npm run demo`. The sessions are fakes from the test harness — real agents would put local paths and whatever happens to be in progress on screen, and would look different every take. The output fed to them does match the real detection patterns, so the badges are the detector's own verdict rather than a mock-up.
 
 **The interface is in Japanese.** The code and this document are not, but the buttons and labels you will see are. See [known limitations](#known-limitations).
 
@@ -294,7 +286,10 @@ npm run test:e2e
 npm run test:headed   # e2e with the window on screen, to watch it work
 npm run test:packaged
 npm run test:report
+npm run demo          # re-record the GIF at the top of this file
 ```
+
+`npm run demo` drives the app through `tests/demo/record.spec.ts`, records it, and writes `docs/demo.gif`. Nothing extra needs installing: Playwright's own ffmpeg splits the video into frames, and sharp — already here for icon generation — assembles the GIF. That ffmpeg is a minimal build with no gif encoder and almost no filters, which is worth knowing before trying to do the whole conversion with it.
 
 The e2e windows do not appear on screen. Electron has no true headless mode like Chromium's, so **the window is placed off-screen** rather than hidden.
 

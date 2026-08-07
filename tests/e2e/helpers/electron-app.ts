@@ -24,7 +24,19 @@ const disposableDirs = new Map<ElectronApplication, string[]>();
  * 環境変数なら main が最初に見るところに割り込めるうえ、アプリを再起動する
  * テストでも同じ場所を指し続けられる。
  */
-export async function launchApp({ settingsPath }: { settingsPath?: string } = {}): Promise<{
+export async function launchApp({
+  settingsPath,
+  recordVideo,
+}: {
+  settingsPath?: string;
+  /**
+   * 画面を録る（デモ収録用。テストでは使わない）。
+   *
+   * `size` を渡さないと Playwright が 800x800 に収まるよう縮めた枠で録り、
+   * 画面より枠が縦長になって下に灰色の帯が残る。実寸を渡すこと。
+   */
+  recordVideo?: { dir: string; size?: { width: number; height: number } };
+} = {}): Promise<{
   electronApp: ElectronApplication;
   page: Page;
 }> {
@@ -36,6 +48,7 @@ export async function launchApp({ settingsPath }: { settingsPath?: string } = {}
 
   const electronApp = await electron.launch({
     args: [APP_PATH],
+    ...(recordVideo ? { recordVideo } : {}),
     env: {
       ...process.env,
       PANEDECK_SETTINGS_PATH: resolved,
