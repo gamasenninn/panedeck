@@ -1,4 +1,4 @@
-# 型検査・ビルド・単体・E2E をまとめて回す（npm test と同じ）。
+﻿# 型検査・ビルド・単体・E2E をまとめて回す（npm test と同じ）。
 #
 # Windows で回すのは、pty が ConPTY の上に乗っていて、実際に痛い不具合が
 # そこで出てきたため（#16）。E2E はウィンドウを画面外に置くので、
@@ -20,9 +20,9 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -33,7 +33,7 @@ jobs:
       - run: npm test
 
       # 落ちたときだけレポートを残す。E2E の失敗は手元で再現しにくい
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-report

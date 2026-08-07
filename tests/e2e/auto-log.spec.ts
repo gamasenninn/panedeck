@@ -81,10 +81,13 @@ test.describe("有効なとき", () => {
     await emitPtyData(electronApp, 0, "done\n");
 
     await expect.poll(() => logFiles().length).toBe(1);
+
+    // 出力は溜めてから定期的に流されるので、2 つの書き込みが同じ回で
+    // 落ちるとは限らない。片方を待って片方を即座に見ると取りこぼす
     await expect
       .poll(() => readLog(logFiles()[0]))
       .toContain("building module 1");
-    expect(readLog(logFiles()[0])).toContain("done");
+    await expect.poll(() => readLog(logFiles()[0])).toContain("done");
   });
 
   test("ファイル名にタイトルと起動時刻が入る", async () => {
@@ -112,8 +115,9 @@ test.describe("有効なとき", () => {
 
     await expect.poll(() => Boolean(named("one") && named("two"))).toBe(true);
     await expect.poll(() => readLog(named("one"))).toContain("AAA");
+    await expect.poll(() => readLog(named("two"))).toContain("BBB");
+    // 混ざっていないこと。ここは待つ対象と見る対象が同じなので即座に見てよい
     expect(readLog(named("one"))).not.toContain("BBB");
-    expect(readLog(named("two"))).toContain("BBB");
   });
 
   test("ANSI エスケープは既定で落とす", async () => {
@@ -171,9 +175,10 @@ test.describe("無効なとき", () => {
     await waitForPaneCount(page, 1);
     await emitPtyData(electronApp, 0, "after enabling");
 
-    await expect.poll(() => logFiles().length).toBeGreaterThan(0);
-    const name = logFiles().find((n) => n.startsWith("late-"));
-    expect(readLog(name)).toContain("after enabling");
+    const named = () => logFiles().find((n) => n.startsWith("late-"));
+    await expect
+      .poll(() => (named() ? readLog(named()) : ""))
+      .toContain("after enabling");
   });
 
   test("トグルの状態は保存される", async () => {
