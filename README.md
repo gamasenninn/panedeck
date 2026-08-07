@@ -1,5 +1,7 @@
 # PaneDeck
 
+[![Tests](https://github.com/gamasenninn/panedeck/actions/workflows/test.yml/badge.svg)](https://github.com/gamasenninn/panedeck/actions/workflows/test.yml)
+
 複数のコーディングエージェントのセッションをグリッド分割ペインで同時に走らせ、まとめて操作するための Electron ターミナルアプリ。
 
 ## これは何か
