@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -9,8 +10,8 @@ import {
   waitForPaneCount,
 } from "./helpers/electron-app";
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, page } = await launchApp());
@@ -32,7 +33,7 @@ test.afterAll(async () => {
  * これが createPane の呼び出し履歴になり、重複＝ペインの二重生成を意味する。
  * `__listCount` は同期が何周したかの目印で、待ち時間ではなく回数で待てる。
  */
-async function gateGetLog(app) {
+async function gateGetLog(app: ElectronApplication) {
   await app.evaluate(({ ipcMain }) => {
     global.__logCalls = [];
     global.__logGate = [];
@@ -55,7 +56,7 @@ async function gateGetLog(app) {
 }
 
 /** 保留していた log:get を解放する。以降は待たずに返すが履歴は取り続ける。 */
-async function releaseGetLog(app) {
+async function releaseGetLog(app: ElectronApplication) {
   await app.evaluate(({ ipcMain }) => {
     global.__logGate.forEach((release) => release());
     global.__logGate = [];
@@ -68,16 +69,16 @@ async function releaseGetLog(app) {
 }
 
 /** createPane が走ったセッション id の履歴。 */
-function logCalls(app) {
+function logCalls(app: ElectronApplication) {
   return app.evaluate(() => global.__logCalls);
 }
 
-function listCalls(app) {
+function listCalls(app: ElectronApplication) {
   return app.evaluate(() => global.__listCount);
 }
 
 /** 同期が指定回数まわるまで待つ。 */
-async function waitForSyncPasses(app, passes) {
+async function waitForSyncPasses(app: ElectronApplication, passes: number) {
   const base = await listCalls(app);
   await expect.poll(() => listCalls(app)).toBeGreaterThanOrEqual(base + passes);
 }

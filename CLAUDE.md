@@ -112,8 +112,14 @@ CSP は `script-src 'self'` のまま。
 
 ### 厳格さ
 
-`strictNullChecks` は **有効**。`strict` / `noImplicitAny` はまだ off で、
-これらを上げるのは今後の作業。
+**`strict` は全部入り**（#23）。移行中は「実害のある指摘が暗黙 any の山に埋もれる」
+ことを避けて緩めていたが、TS 化が済んだ時点で本体側に残った指摘は 1 件だけだった。
+テスト側の 808 件も 93% は各 spec の `let electronApp;` / `let page;` からの連鎖で、
+実質「20 ファイル × 2 行」だった。**緩める理由のほうが先に消えていた。**
+
+E2E の spec は `let electronApp: ElectronApplication;` / `let page: Page;` と書く
+（型は `@playwright/test` から `import type`）。ここに型が無いと、そのファイルの
+`app.evaluate(...)` の中身まで丸ごと any に落ちる。
 
 `createSession` / `setSettings` の戻り値は**判別可能な union**。`if (!result.ok)` で
 絞り込めるので、成功時にしか無い項目へ誤って触ると検査で落ちる。

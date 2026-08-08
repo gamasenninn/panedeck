@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import {
@@ -24,8 +25,8 @@ const AUTO_PATH = path.join(TEMP_DIR, "last-session.json");
 const NODE = process.execPath;
 const STAY_ALIVE = ["-e", "setInterval(() => {}, 1000)"];
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 /**
  * アプリを起動し直す。
@@ -42,7 +43,7 @@ async function relaunch() {
   ({ electronApp, page } = await launchApp({ settingsPath: SETTINGS_PATH }));
 }
 
-async function givenSession(title) {
+async function givenSession(title: string) {
   await createSession(page, {
     cwd: TEMP_DIR,
     shell: NODE,

@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import {
@@ -19,8 +20,8 @@ import {
 
 const TEMP_DIR = path.join(__dirname, "temp-agent");
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
@@ -36,7 +37,7 @@ test.afterAll(async () => {
 
 const agentSelect = () => page.locator("[data-testid=agent-select]");
 const launchCommand = () => page.locator("[data-testid=launch-command]");
-const statusBadge = (i) => page.locator("[data-testid=pane-status]").nth(i);
+const statusBadge = (i: number) => page.locator("[data-testid=pane-status]").nth(i);
 
 /** ツールバーを既定（Claude Code）に戻す */
 async function resetToolbar() {
@@ -45,9 +46,9 @@ async function resetToolbar() {
 
 test("同梱プロファイルが選択肢に並ぶ", async () => {
   await resetSessions(electronApp, page);
-  const ids = await agentSelect().locator("option").evaluateAll((options) =>
-    options.map((o) => o.value)
-  );
+  const ids = await agentSelect()
+    .locator("option")
+    .evaluateAll((options: HTMLOptionElement[]) => options.map((o) => o.value));
 
   expect(ids).toEqual(["claude", "codex", "shell"]);
 });
@@ -140,7 +141,7 @@ test.describe("ワークスペースとの往復", () => {
 
     await expect.poll(() => fs.existsSync(wsPath())).toBe(true);
     const saved = JSON.parse(fs.readFileSync(wsPath(), "utf8"));
-    expect(saved.sessions.map((s) => s.agent)).toEqual(["claude", "codex"]);
+    expect(saved.sessions.map((s: { agent: string }) => s.agent)).toEqual(["claude", "codex"]);
   });
 
   test("復元するとエージェントごとの判定も戻る", async () => {

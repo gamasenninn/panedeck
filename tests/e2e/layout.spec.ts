@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import {
@@ -20,8 +21,8 @@ import {
 const TEMP_DIR = path.join(__dirname, "temp-layout");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
@@ -57,7 +58,7 @@ async function orderInMain() {
   return (await listSessions(electronApp)).map((s) => s.title);
 }
 
-async function givenPanes(titles) {
+async function givenPanes(titles: string[]) {
   await resetSessions(electronApp, page);
   for (const title of titles) {
     await createSession(page, { cwd: `C:\\app\\${title}`, title });
@@ -99,7 +100,7 @@ test("ヘッダを掴んでドラッグすると並べ替えられる", async ()
   // C のヘッダを A の左半分へ落とす
   const source = page.locator(".pane").nth(2).locator(".pane-header");
   const target = page.locator(".pane").nth(0);
-  const box = await target.boundingBox();
+  const box = (await target.boundingBox())!;
   await source.dragTo(target, {
     targetPosition: { x: box.width * 0.2, y: box.height * 0.1 },
   });
@@ -112,10 +113,10 @@ test("端末の上ではドラッグを始めない（文字選択の邪魔を�
   await givenPanes(["A", "B"]);
 
   const body = page.locator(".pane").nth(0).locator(".pane-body");
-  expect(await body.evaluate((el) => el.draggable)).toBe(false);
+  expect(await body.evaluate((el: HTMLElement) => el.draggable)).toBe(false);
 
   const header = page.locator(".pane").nth(0).locator(".pane-header");
-  expect(await header.evaluate((el) => el.draggable)).toBe(true);
+  expect(await header.evaluate((el: HTMLElement) => el.draggable)).toBe(true);
 });
 
 test("ポーリングで並びが元に戻らない", async () => {
@@ -182,7 +183,7 @@ test.describe("ワークスペースとの往復", () => {
 
     await expect.poll(() => fs.existsSync(wsPath())).toBe(true);
     const saved = JSON.parse(fs.readFileSync(wsPath(), "utf8"));
-    expect(saved.sessions.map((s) => s.title)).toEqual(["C", "A", "B"]);
+    expect(saved.sessions.map((s: { title: string }) => s.title)).toEqual(["C", "A", "B"]);
   });
 
   test("復元すると並び順も再現する", async () => {

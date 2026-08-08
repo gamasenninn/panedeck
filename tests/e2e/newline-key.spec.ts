@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -15,8 +16,8 @@ import {
  * PaneDeck 側で改行として通る別のバイト列へ差し替えている。
  */
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, page } = await launchApp());

@@ -14,12 +14,5 @@
     "rootDir": ".",
     "sourceMap": true
   },
-  "include": [
-    "main.js",
-    "main.ts",
-    "preload.js",
-    "preload.ts",
-    "lib/**/*",
-    "types/**/*.d.ts"
-  ]
+  "include": ["main.ts", "preload.ts", "lib/**/*", "types/**/*.d.ts"]
 }

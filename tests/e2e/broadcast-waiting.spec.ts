@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -13,8 +14,8 @@ import {
   waitForPaneCount,
 } from "./helpers/electron-app";
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, page } = await launchApp());
@@ -29,9 +30,9 @@ test.afterAll(async () => {
 
 const waitingOnly = () => page.locator("[data-testid=waiting-only]");
 const target = () => page.locator("[data-testid=broadcast-target]");
-const statusBadge = (i) => page.locator("[data-testid=pane-status]").nth(i);
+const statusBadge = (i: number) => page.locator("[data-testid=pane-status]").nth(i);
 
-async function typeAndSend(text) {
+async function typeAndSend(text: string) {
   await page.locator("[data-testid=broadcast-input]").fill(text);
   await page.locator("[data-testid=broadcast-send]").click();
 }

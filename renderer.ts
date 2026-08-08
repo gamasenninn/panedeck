@@ -738,7 +738,7 @@ async function sendBroadcast() {
   broadcastInput.value = "";
 }
 
-async function sendKey(key) {
+async function sendKey(key: string) {
   const sequence = KEY_SEQUENCES[key];
   if (!sequence) return;
 

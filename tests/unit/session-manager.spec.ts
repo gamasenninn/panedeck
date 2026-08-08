@@ -407,7 +407,7 @@ test.describe("並べ替え", () => {
     return { manager, ptyFactory, now, a, b, c };
   }
 
-  const titles = (manager) => manager.list().map((s) => s.title);
+  const titles = (manager: SessionManager) => manager.list().map((s) => s.title);
 
   test("指定した順に並べ替える", () => {
     const { manager, a, b, c } = setupThree();

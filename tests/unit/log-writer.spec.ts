@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+﻿import { test, expect } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import { LogWriter, logFileName } from "../../lib/log-writer";
@@ -260,7 +260,7 @@ test.describe("書き込み失敗", () => {
     writer.open("s1", "repo-a");
     writer.append("s1", "x");
 
-    let failures;
+    let failures: ReturnType<typeof writer.flush> = [];
     expect(() => {
       failures = writer.flush();
     }).not.toThrow();

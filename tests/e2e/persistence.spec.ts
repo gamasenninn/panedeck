@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import {
@@ -19,8 +20,8 @@ import {
 
 const TEMP_DIR = path.join(__dirname, "temp");
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
@@ -93,7 +94,7 @@ test.describe("ワークスペースの保存と復元", () => {
     await expect.poll(() => fs.existsSync(wsPath())).toBe(true);
     const saved = JSON.parse(fs.readFileSync(wsPath(), "utf8"));
     expect(saved.sessions).toHaveLength(2);
-    expect(saved.sessions.map((s) => s.cwd)).toEqual([
+    expect(saved.sessions.map((s: { cwd: string }) => s.cwd)).toEqual([
       "C:\\app\\repo-a",
       "C:\\app\\repo-b",
     ]);
@@ -192,7 +193,7 @@ test.describe("セッションごとの起動コマンドの往復", () => {
 
     await expect.poll(() => fs.existsSync(mixedPath())).toBe(true);
     const saved = JSON.parse(fs.readFileSync(mixedPath(), "utf8"));
-    expect(saved.sessions.map((s) => s.initialCommand)).toEqual([
+    expect(saved.sessions.map((s: { initialCommand: string }) => s.initialCommand)).toEqual([
       "claude",
       "codex --resume",
       undefined,

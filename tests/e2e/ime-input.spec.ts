@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -17,8 +18,8 @@ import {
  * PaneDeck 側の受け渡しは正しく、あとは受け取る側の問題になる。
  */
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, page } = await launchApp());

@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -10,8 +11,8 @@ import {
   waitForPaneCount,
 } from "./helpers/electron-app";
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, page } = await launchApp());
@@ -23,7 +24,7 @@ test.afterAll(async () => {
 });
 
 /** ペインを n 個そろえる（起動コマンドは流さない） */
-async function givenPanes(n) {
+async function givenPanes(n: number) {
   await resetSessions(electronApp, page);
   for (let i = 0; i < n; i++) {
     await createSession(page, { cwd: `C:\\app\\repo-${i}` });
@@ -31,7 +32,7 @@ async function givenPanes(n) {
   await waitForPaneCount(page, n);
 }
 
-async function typeAndSend(text) {
+async function typeAndSend(text: string) {
   await page.locator("[data-testid=broadcast-input]").fill(text);
   await page.locator("[data-testid=broadcast-send]").click();
 }

@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import {
@@ -16,8 +17,8 @@ import {
 const TEMP_DIR = path.join(__dirname, "temp-settings");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
@@ -63,7 +64,7 @@ async function shownFontSize(): Promise<string> {
   return value;
 }
 
-async function givenPanes(n) {
+async function givenPanes(n: number) {
   await resetSessions(electronApp, page);
   for (let i = 0; i < n; i++) {
     await createSession(page, { cwd: `C:\\app\\repo-${i}` });

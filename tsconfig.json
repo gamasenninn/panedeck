@@ -1,11 +1,9 @@
 {
   "//": [
     "型検査だけを行う設定。noEmit なので JS は一切生成しない。",
-    "ファイル名も実行時の挙動も変えずに、main / preload / renderer をまたぐ",
-    "受け渡しの食い違いを捕まえるのが目的。",
-    "完全な .ts 化は #6（パッケージング）でビルド工程を入れるときに行う。",
-    "strict と noImplicitAny は意図的に緩めてある。JSDoc 主体のコードで",
-    "いきなり全部を厳格にすると、実害のある指摘が暗黙 any の山に埋もれるため。"
+    "main / preload / renderer をまたぐ受け渡しの食い違いを捕まえるのが目的。",
+    "strict は全部入り。移行中は暗黙 any の山に実害が埋もれるので緩めていたが、",
+    "TS 化が済んだ時点で本体側の指摘は 1 件しか残らなかった（#23）。"
   ],
   "compilerOptions": {
     "target": "ES2022",
@@ -13,13 +11,9 @@
     "module": "node18",
     "types": ["node"],
 
-    "allowJs": true,
-    "checkJs": true,
     "noEmit": true,
 
-    "strict": false,
-    "noImplicitAny": false,
-    "strictNullChecks": true,
+    "strict": true,
 
     "resolveJsonModule": true,
     "esModuleInterop": true,
@@ -28,12 +22,10 @@
   },
   "include": [
     "types/**/*.d.ts",
-    "main.js",
     "main.ts",
-    "preload.js",
     "preload.ts",
-    "renderer.js",
     "renderer.ts",
+    "renderer/**/*.ts",
     "lib/**/*",
     "tests/**/*"
   ]

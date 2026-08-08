@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -12,8 +13,8 @@ import {
   waitForPaneCount,
 } from "./helpers/electron-app";
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, page } = await launchApp());
@@ -29,7 +30,7 @@ test.afterAll(async () => {
 const statusBadge = (index = 0) =>
   page.locator("[data-testid=pane-status]").nth(index);
 
-async function givenPanes(n) {
+async function givenPanes(n: number) {
   await resetSessions(electronApp, page);
   for (let i = 0; i < n; i++) {
     await createSession(page, { cwd: `C:\\app\\repo-${i}` });

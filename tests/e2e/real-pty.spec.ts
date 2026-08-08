@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import path from "path";
 import {
   launchApp,
@@ -20,8 +21,8 @@ const REAL_SHELL =
     ? { shell: "powershell.exe", args: ["-NoLogo", "-NoProfile", "-Command", `Write-Output ${MARKER}`] }
     : { shell: "bash", args: ["-c", `echo ${MARKER}`] };
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, page } = await launchApp());
@@ -31,14 +32,14 @@ test.afterAll(async () => {
   await closeApp(electronApp);
 });
 
-async function logOf(id) {
+async function logOf(id: string) {
   return electronApp.evaluate(
     (_, sessionId) => global.__sessionManager.getLog(sessionId),
     id
   );
 }
 
-async function statusOf(id) {
+async function statusOf(id: string) {
   return electronApp.evaluate(
     (_, sessionId) => global.__sessionManager.get(sessionId)?.status,
     id

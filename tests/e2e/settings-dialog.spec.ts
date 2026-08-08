@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import {
@@ -16,8 +17,8 @@ import {
 const TEMP_DIR = path.join(__dirname, "temp-settings-dialog");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });

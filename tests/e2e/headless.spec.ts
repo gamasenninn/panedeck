@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import {
   launchApp,
   closeApp,
@@ -19,8 +20,8 @@ import {
  * 変わらなかった。画面外なら描画は続くので、速度を落とさずに済む。
  */
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
 
 test.beforeAll(async () => {
   ({ electronApp, page } = await launchApp());

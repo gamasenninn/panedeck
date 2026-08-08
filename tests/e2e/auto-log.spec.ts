@@ -1,4 +1,5 @@
 ﻿import { test, expect } from "@playwright/test";
+import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import {
@@ -17,20 +18,24 @@ const TEMP_DIR = path.join(__dirname, "temp-auto-log");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");
 const LOG_DIR = path.join(TEMP_DIR, "logs");
 
-let electronApp;
-let page;
+let electronApp: ElectronApplication;
+let page: Page;
+
+/** アプリが動いているか。テストの中で閉じた分を二重に閉じないための目印 */
+let running = false;
 
 /** 設定ファイルを直接書いてからアプリを起動する。 */
-async function launchWith(settings) {
+async function launchWith(settings: Record<string, unknown>) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
   fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings), "utf8");
 
   ({ electronApp, page } = await launchApp({ settingsPath: SETTINGS_PATH }));
   await useFakePty(electronApp);
+  running = true;
 }
 
-async function relaunchWith(settings) {
-  if (electronApp) await closeApp(electronApp);
+async function relaunchWith(settings: Record<string, unknown>) {
+  if (running) await closeApp(electronApp);
   await launchWith(settings);
 }
 
@@ -45,7 +50,7 @@ function logFiles(dir = LOG_DIR) {
     : [];
 }
 
-function readLog(name, dir = LOG_DIR) {
+function readLog(name: string, dir = LOG_DIR) {
   return fs.readFileSync(path.join(dir, name), "utf8");
 }
 
@@ -63,7 +68,7 @@ test.beforeAll(() => {
 });
 
 test.afterAll(async () => {
-  if (electronApp) await closeApp(electronApp);
+  if (running) await closeApp(electronApp);
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
 });
 
@@ -110,14 +115,14 @@ test.describe("有効なとき", () => {
     await emitPtyData(electronApp, 0, "AAA");
     await emitPtyData(electronApp, 1, "BBB");
 
-    const named = (prefix) =>
+    const named = (prefix: string) =>
       logFiles().find((n) => n.startsWith(`${prefix}-`));
 
     await expect.poll(() => Boolean(named("one") && named("two"))).toBe(true);
-    await expect.poll(() => readLog(named("one"))).toContain("AAA");
-    await expect.poll(() => readLog(named("two"))).toContain("BBB");
+    await expect.poll(() => readLog(named("one")!)).toContain("AAA");
+    await expect.poll(() => readLog(named("two")!)).toContain("BBB");
     // 混ざっていないこと。ここは待つ対象と見る対象が同じなので即座に見てよい
-    expect(readLog(named("one"))).not.toContain("BBB");
+    expect(readLog(named("one")!)).not.toContain("BBB");
   });
 
   test("ANSI エスケープは既定で落とす", async () => {
@@ -128,8 +133,8 @@ test.describe("有効なとき", () => {
     await emitPtyData(electronApp, 0, "\x1b[31mred\x1b[0m plain");
 
     const named = () => logFiles().find((n) => n.startsWith("colored-"));
-    await expect.poll(() => (named() ? readLog(named()) : "")).toContain("red plain");
-    expect(readLog(named())).not.toContain("\x1b[31m");
+    await expect.poll(() => (named() ? readLog(named()!) : "")).toContain("red plain");
+    expect(readLog(named()!)).not.toContain("\x1b[31m");
   });
 
   test("アプリを閉じてもファイルが残る", async () => {
@@ -143,7 +148,7 @@ test.describe("有効なとき", () => {
     const name = named()!;
 
     await closeApp(electronApp);
-    electronApp = null;
+    running = false;
 
     expect(fs.existsSync(path.join(LOG_DIR, name))).toBe(true);
     expect(readLog(name)).toContain("written before quit");
@@ -177,7 +182,7 @@ test.describe("無効なとき", () => {
 
     const named = () => logFiles().find((n) => n.startsWith("late-"));
     await expect
-      .poll(() => (named() ? readLog(named()) : ""))
+      .poll(() => (named() ? readLog(named()!) : ""))
       .toContain("after enabling");
   });
 
