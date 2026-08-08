@@ -1,0 +1,74 @@
+/**
+ * 一斉入力の送信先の決まり方。
+ *
+ * 「打った内容が誰に届くか」はこのアプリの主機能で、送る前に読めるのは
+ * ツールバーの一行だけ。判断そのものを画面の配線から切り離しておく。
+ *
+ * DOM も panes も見ない。チェック状態と状態バッジを写した素のデータだけを
+ * 受け取る（`clipboard.ts` / `keys.ts` と同じ扱い）。
+ */
+
+import type { SessionStatus, BroadcastOptions } from "../types/panedeck";
+import { WAITING } from "./constants.js";
+
+/** 送信先を決めるのに要るだけの、ペイン 1 枚ぶんの情報 */
+export interface BroadcastPane {
+  id: string;
+  status: SessionStatus;
+  /** チェックボックスが入っているか */
+  selected: boolean;
+}
+
+/**
+ * 送信対象の id。チェックが無ければ null。
+ *
+ * null は「全ペイン」を意味する。ここで全 id を並べて返さないのは、
+ * 状態による絞り込みをメインプロセスに任せているため（レンダラの状態は
+ * 300ms ポーリングぶん古くなりうる）。
+ *
+ * **状態では絞らない。** それは `broadcastOptions` の役目で、
+ * 二重に判定すると片方だけ直したときに食い違う。
+ */
+export function targetIds(panes: BroadcastPane[]): string[] | null {
+  const selected = panes.filter((pane) => pane.selected).map((pane) => pane.id);
+  return selected.length > 0 ? selected : null;
+}
+
+/**
+ * 状態による絞り込み。
+ *
+ * 絞り込み自体はメインプロセスに委ねる。送信可否は、その場で状態を
+ * 算出できる側が決める。
+ */
+export function broadcastOptions(waitingOnly: boolean): BroadcastOptions | undefined {
+  return waitingOnly ? { onlyStatus: WAITING } : undefined;
+}
+
+/** 送信先が 0 件だったときの説明。 */
+export function noTargetMessage(waitingOnly: boolean): string {
+  return waitingOnly
+    ? "入力待ちのペインがありません"
+    : "送信先のペインがありません";
+}
+
+/**
+ * 送信先の表示。
+ *
+ * 選択の有無 × 入力待ちのみの有無で 4 通りある。
+ */
+export function targetLabel(panes: BroadcastPane[], waitingOnly: boolean): string {
+  const selected = panes.filter((pane) => pane.selected);
+  const scoped = selected.length > 0;
+  const targets = scoped ? selected : panes;
+
+  if (!waitingOnly) {
+    return scoped
+      ? `送信先: 選択 ${targets.length} ペイン`
+      : `送信先: 全 ${targets.length} ペイン`;
+  }
+
+  const count = targets.filter((pane) => pane.status === WAITING).length;
+  return scoped
+    ? `送信先: 選択のうち入力待ち ${count} ペイン`
+    : `送信先: 入力待ち ${count} ペイン`;
+}

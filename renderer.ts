@@ -3,9 +3,16 @@
 // xterm は npm の bare import が解決できないため、script タグで読み込んだ
 // グローバル（Terminal / FitAddon）をそのまま使う。
 import type { Session, SessionStatus, Settings } from "./types/panedeck";
-import { STATUS_LABELS, WAITING, KEY_SEQUENCES } from "./renderer/constants.js";
+import { STATUS_LABELS, KEY_SEQUENCES } from "./renderer/constants.js";
 import { shouldCopySelection } from "./renderer/clipboard.js";
 import { newlineSequenceFor } from "./renderer/keys.js";
+import {
+  targetIds,
+  broadcastOptions,
+  noTargetMessage,
+  targetLabel,
+} from "./renderer/broadcast.js";
+import type { BroadcastPane } from "./renderer/broadcast.js";
 
 // contextBridge が公開したグローバル。モジュールなので、かつて衝突を招いた
 // `const deck` という名前を避ける必要はもう無いが、呼び分けやすさで api のまま
@@ -521,53 +528,25 @@ function applyOrder(sessions: Session[]) {
   panes.forEach(fit);
 }
 
-function selectedPanes() {
-  return [...panes.values()].filter((pane) => pane.selectEl.checked);
-}
-
-function selectedIds() {
-  return selectedPanes().map((pane) => pane.id);
-}
-
-/** 送信対象。チェックが無ければ全ペイン。 */
-function targetIds() {
-  const selected = selectedIds();
-  return selected.length > 0 ? selected : null;
-}
-
 /**
- * 状態による絞り込み。
+ * 送信先の判断に渡す形へ写す。
  *
- * 絞り込み自体はメインプロセスに委ねる。レンダラが持つ状態は 300ms ポーリング
- * ぶん古くなりうるので、送信可否はその場で状態を算出できる側で決める。
+ * ここから先（誰に届くか・何と表示するか）は `renderer/broadcast.ts` の
+ * 純粋関数が決める。DOM を読むのはこの 1 箇所だけにしておく。
  */
-function broadcastOptions() {
-  return waitingOnlyEl.checked ? { onlyStatus: WAITING } : undefined;
-}
-
-/** 送信先が 0 件だったときの説明。 */
-function noTargetMessage() {
-  return waitingOnlyEl.checked
-    ? "入力待ちのペインがありません"
-    : "送信先のペインがありません";
+function broadcastPanes(): BroadcastPane[] {
+  return [...panes.values()].map((pane) => ({
+    id: pane.id,
+    status: pane.status,
+    selected: pane.selectEl.checked,
+  }));
 }
 
 function updateBroadcastTarget() {
-  const selected = selectedPanes();
-  const scoped = selected.length > 0;
-  const targets = scoped ? selected : [...panes.values()];
-
-  if (!waitingOnlyEl.checked) {
-    broadcastTargetEl.textContent = scoped
-      ? `送信先: 選択 ${targets.length} ペイン`
-      : `送信先: 全 ${targets.length} ペイン`;
-    return;
-  }
-
-  const count = targets.filter((pane) => pane.status === WAITING).length;
-  broadcastTargetEl.textContent = scoped
-    ? `送信先: 選択のうち入力待ち ${count} ペイン`
-    : `送信先: 入力待ち ${count} ペイン`;
+  broadcastTargetEl.textContent = targetLabel(
+    broadcastPanes(),
+    waitingOnlyEl.checked
+  );
 }
 
 // -------------------------------------------------------------------- 操作
@@ -727,10 +706,15 @@ async function sendBroadcast() {
   const text = broadcastInput.value;
   if (text === "") return;
 
-  const sent = await api.broadcast(`${text}\r`, targetIds(), broadcastOptions());
+  const waitingOnly = waitingOnlyEl.checked;
+  const sent = await api.broadcast(
+    `${text}\r`,
+    targetIds(broadcastPanes()),
+    broadcastOptions(waitingOnly)
+  );
   if (sent === 0) {
     // 打ち直さずに済むよう入力は残す
-    showMessage(noTargetMessage(), { error: true });
+    showMessage(noTargetMessage(waitingOnly), { error: true });
     return;
   }
 
@@ -742,9 +726,14 @@ async function sendKey(key: string) {
   const sequence = KEY_SEQUENCES[key];
   if (!sequence) return;
 
-  const sent = await api.broadcast(sequence, targetIds(), broadcastOptions());
+  const waitingOnly = waitingOnlyEl.checked;
+  const sent = await api.broadcast(
+    sequence,
+    targetIds(broadcastPanes()),
+    broadcastOptions(waitingOnly)
+  );
   if (sent === 0) {
-    showMessage(noTargetMessage(), { error: true });
+    showMessage(noTargetMessage(waitingOnly), { error: true });
     return;
   }
 
