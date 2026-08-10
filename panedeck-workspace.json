@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "panedeck",
+  "sessions": [
+    {
+      "title": "panedeck",
+      "cwd": "C:\\app\\panedeck",
+      "args": [],
+      "initialCommand": "claude --continue",
+      "agent": "claude"
+    }
+  ]
+}

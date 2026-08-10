@@ -685,8 +685,24 @@
 
       <div id="keys">
         <button data-key="enter" data-testid="key-enter">Enter</button>
-        <button data-key="esc" data-testid="key-esc">Esc</button>
-        <button data-key="ctrl-c" data-testid="key-ctrl-c">Ctrl+C</button>
+        <!--
+          中断は「入力待ちのみ」を無視して送る。止めたいのは動いている
+          ペインで、入力待ちのペインは何も実行していないため（#25）
+        -->
+        <button
+          data-key="esc"
+          data-testid="key-esc"
+          title="中断。「入力待ちのみ」は無視して送ります（選択があればその範囲）"
+        >
+          Esc
+        </button>
+        <button
+          data-key="ctrl-c"
+          data-testid="key-ctrl-c"
+          title="中断。「入力待ちのみ」は無視して送ります（選択があればその範囲）"
+        >
+          Ctrl+C
+        </button>
         <button data-key="up" data-testid="key-up">↑</button>
         <button data-key="down" data-testid="key-down">↓</button>
       </div>

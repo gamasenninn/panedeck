@@ -9,6 +9,8 @@ import { newlineSequenceFor } from "./renderer/keys.js";
 import {
   targetIds,
   broadcastOptions,
+  optionsForKey,
+  isInterruptKey,
   noTargetMessage,
   targetLabel,
 } from "./renderer/broadcast.js";
@@ -722,22 +724,36 @@ async function sendBroadcast() {
   broadcastInput.value = "";
 }
 
+/**
+ * 特殊キーを送る。
+ *
+ * 中断のキー（Esc / Ctrl+C）だけは「入力待ちのみ」を無視する。止めたいのは
+ * 動いているペインで、入力待ちのペインは定義上なにも実行していないため、
+ * 絞り込んだままだと一番使いたい瞬間に空振りする（#25）。
+ *
+ * ただし画面の表示（送信先: 入力待ち N ペイン）とは食い違うことになるので、
+ * **何ペインへ届いたかを必ず知らせる。** 黙って別の相手に送るほうが悪い。
+ */
 async function sendKey(key: string) {
   const sequence = KEY_SEQUENCES[key];
   if (!sequence) return;
 
   const waitingOnly = waitingOnlyEl.checked;
+  const interrupt = isInterruptKey(key);
   const sent = await api.broadcast(
     sequence,
     targetIds(broadcastPanes()),
-    broadcastOptions(waitingOnly)
+    optionsForKey(key, waitingOnly)
   );
   if (sent === 0) {
-    showMessage(noTargetMessage(waitingOnly), { error: true });
+    // 中断は絞り込みを外しているので、0 件なら理由は「入力待ちが無い」ではない
+    showMessage(interrupt ? "送信先のペインがありません" : noTargetMessage(waitingOnly), {
+      error: true,
+    });
     return;
   }
 
-  showMessage("");
+  showMessage(interrupt ? `中断を ${sent} ペインへ送りました` : "");
 }
 
 // ---------------------------------------------------------------- イベント

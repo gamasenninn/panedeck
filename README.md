@@ -111,7 +111,9 @@ What you type in the bar at the bottom goes to several panes at once.
 | Ctrl+C | `\x03` | Interrupt the process |
 | ↑ / ↓ | `\x1b[A` / `\x1b[B` | Move through choices, recall history |
 
-Targets are chosen the same way as broadcasts. "Send Enter, but only to the panes that are stopped" is what this is for.
+Targets are chosen the same way as broadcasts — "send Enter, but only to the panes that are stopped" is what this is for — with one deliberate exception.
+
+**Esc and Ctrl+C ignore "waiting only".** They exist to stop a pane that is busy, and a pane waiting for input is by definition not busy, so honouring the filter would send the interrupt to every pane except the ones that need it. Since the filter is natural to leave switched on, that would fail exactly when it matters. Pane selection still applies: ticking panes is a deliberate choice, whereas waiting-only is a mode. Because this diverges from what the target line says, an interrupt always reports how many panes it reached.
 
 ### Newlines in an agent's input box
 

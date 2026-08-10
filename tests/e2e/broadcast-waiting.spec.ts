@@ -172,13 +172,68 @@ test.describe("特殊キー", () => {
     expect(await writtenTo(electronApp, 2)).toEqual([]);
   });
 
-  test("該当が 0 件なら特殊キーも送らず知らせる", async () => {
+  test("該当が 0 件なら進めるキーは送らず知らせる", async () => {
     await givenNoWaitingDeck();
     await waitingOnly().check();
 
-    await page.locator("[data-testid=key-esc]").click();
+    await page.locator("[data-testid=key-enter]").click();
 
     await expect(page.locator("[data-testid=message]")).toContainText("入力待ち");
     expect(await writtenTo(electronApp, 0)).toEqual([]);
+  });
+
+  /**
+   * 中断のキーだけは「入力待ちのみ」を無視する（#25）。
+   *
+   * 止めたいのは動いているペインで、入力待ちのペインは定義上なにも
+   * 実行していない。絞り込んだままだと、一番使いたい瞬間に空振りする。
+   */
+  test.describe("中断のキー", () => {
+    test("入力待ちのみが入っていても、実行中のペインへ届く", async () => {
+      await givenMixedDeck();
+      await waitingOnly().check();
+      // 進めるキーなら 1 件しか対象にならない状況
+      await expect(target()).toHaveText("送信先: 入力待ち 1 ペイン");
+
+      await page.locator("[data-testid=key-ctrl-c]").click();
+
+      // 入力待ち・待機・実行中のどれにも届く
+      expect(await writtenTo(electronApp, 0)).toEqual(["\x03"]);
+      expect(await writtenTo(electronApp, 1)).toEqual(["\x03"]);
+      expect(await writtenTo(electronApp, 2)).toEqual(["\x03"]);
+    });
+
+    test("Esc も同じ扱い", async () => {
+      await givenMixedDeck();
+      await waitingOnly().check();
+
+      await page.locator("[data-testid=key-esc]").click();
+
+      expect(await writtenTo(electronApp, 2)).toEqual(["\x1b"]);
+    });
+
+    test("選択は無視しない（明示的な指定なので尊重する）", async () => {
+      await givenMixedDeck();
+      await waitingOnly().check();
+      // 実行中のペインだけ選ぶ
+      await page.locator("[data-testid=pane-select]").nth(2).check();
+
+      await page.locator("[data-testid=key-ctrl-c]").click();
+
+      expect(await writtenTo(electronApp, 0)).toEqual([]);
+      expect(await writtenTo(electronApp, 1)).toEqual([]);
+      expect(await writtenTo(electronApp, 2)).toEqual(["\x03"]);
+    });
+
+    test("何ペインへ届いたかを知らせる（絞り込みと食い違うため）", async () => {
+      await givenMixedDeck();
+      await waitingOnly().check();
+
+      await page.locator("[data-testid=key-ctrl-c]").click();
+
+      await expect(page.locator("[data-testid=message]")).toContainText(
+        "中断を 3 ペインへ送りました"
+      );
+    });
   });
 });

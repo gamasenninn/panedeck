@@ -44,6 +44,36 @@ export function broadcastOptions(waitingOnly: boolean): BroadcastOptions | undef
   return waitingOnly ? { onlyStatus: WAITING } : undefined;
 }
 
+/**
+ * 動いているペインを止めるためのキー。
+ *
+ * ツールバーの特殊キーは目的で二手に分かれる。Enter / ↑ / ↓ は**止まって
+ * いるペインを進める**もので、入力待ちに絞るのが目的そのもの。対して
+ * Esc / Ctrl+C は**動いているペインを止める**もので、入力待ちに絞ると
+ * 止めたい相手にだけ届かない（#25）。
+ *
+ * 入力待ちのペインは、定義上なにも実行していない。
+ */
+const INTERRUPT_KEYS = new Set(["esc", "ctrl-c"]);
+
+export function isInterruptKey(key: string): boolean {
+  return INTERRUPT_KEYS.has(key);
+}
+
+/**
+ * 特殊キーに当てる絞り込み。
+ *
+ * 中断のキーだけは「入力待ちのみ」を無視する。**選択（チェックボックス）は
+ * どちらのキーでも尊重する** — 選択はその場の明示的な指定で、絞り込みは
+ * 入れっぱなしにする類のモードなので、扱いを分ける。
+ */
+export function optionsForKey(
+  key: string,
+  waitingOnly: boolean
+): BroadcastOptions | undefined {
+  return broadcastOptions(waitingOnly && !isInterruptKey(key));
+}
+
 /** 送信先が 0 件だったときの説明。 */
 export function noTargetMessage(waitingOnly: boolean): string {
   return waitingOnly

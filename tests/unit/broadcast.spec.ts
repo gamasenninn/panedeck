@@ -2,6 +2,8 @@ import { test, expect } from "@playwright/test";
 import {
   targetIds,
   broadcastOptions,
+  optionsForKey,
+  isInterruptKey,
   noTargetMessage,
   targetLabel,
 } from "../../renderer/broadcast";
@@ -62,6 +64,48 @@ test.describe("broadcastOptions", () => {
 
   test("on なら入力待ちで絞る", () => {
     expect(broadcastOptions(true)).toEqual({ onlyStatus: "waiting" });
+  });
+});
+
+/**
+ * 特殊キーは目的で二手に分かれる（#25）。
+ *
+ * Enter / ↑ / ↓ は「止まっているペインを進める」ためのもので、入力待ちに
+ * 絞るのが目的そのもの。Esc / Ctrl+C は「動いているペインを止める」ための
+ * もので、入力待ちに絞ると**止めたい相手にだけ届かない**。
+ */
+test.describe("isInterruptKey", () => {
+  test("中断のキー", () => {
+    expect(isInterruptKey("esc")).toBe(true);
+    expect(isInterruptKey("ctrl-c")).toBe(true);
+  });
+
+  test("進めるキー", () => {
+    expect(isInterruptKey("enter")).toBe(false);
+    expect(isInterruptKey("up")).toBe(false);
+    expect(isInterruptKey("down")).toBe(false);
+  });
+
+  test("知らないキーは中断扱いしない（絞り込みを勝手に外さない）", () => {
+    expect(isInterruptKey("nonsense")).toBe(false);
+  });
+});
+
+test.describe("optionsForKey", () => {
+  test("進めるキーは入力待ちの絞り込みに従う", () => {
+    expect(optionsForKey("enter", true)).toEqual({ onlyStatus: "waiting" });
+    expect(optionsForKey("up", true)).toEqual({ onlyStatus: "waiting" });
+    expect(optionsForKey("down", true)).toEqual({ onlyStatus: "waiting" });
+  });
+
+  test("中断のキーは絞り込みを無視する", () => {
+    expect(optionsForKey("esc", true)).toBeUndefined();
+    expect(optionsForKey("ctrl-c", true)).toBeUndefined();
+  });
+
+  test("絞り込みが off ならどちらも指定なし", () => {
+    expect(optionsForKey("enter", false)).toBeUndefined();
+    expect(optionsForKey("ctrl-c", false)).toBeUndefined();
   });
 });
 
