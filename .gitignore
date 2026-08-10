@@ -9,3 +9,8 @@ tests/**/temp/*
 logs/
 workspaces/
 .demo/
+
+# 「構成を保存」の既定ファイル名。保存ダイアログの初期位置がアプリの
+# 作業ディレクトリなので、リポジトリ直下で動かすとここに落ちる
+panedeck-workspace.json
+*.workspace.json
