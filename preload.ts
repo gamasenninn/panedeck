@@ -46,7 +46,7 @@ const deck: DeckApi = {
 
   // ワークスペース
   saveWorkspace: (name) => ipcRenderer.invoke("workspace:save", name),
-  restoreWorkspace: (options) => ipcRenderer.invoke("workspace:restore", options),
+  restoreWorkspace: () => ipcRenderer.invoke("workspace:restore"),
 };
 
 contextBridge.exposeInMainWorld("deck", deck);

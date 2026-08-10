@@ -124,14 +124,22 @@ test.describe("ワークスペースの保存と復元", () => {
     ]);
   });
 
-  test("復元時にツールバーの起動コマンドが各セッションへ流し込まれる", async () => {
+  /**
+   * かつてはツールバーの起動コマンドを各セッションへ流し込んでいた（#26）。
+   * 起動コマンド無しで保存したペインはシェルとして保存された意図なので、
+   * 復元でそれを勝手に変えない。
+   */
+  test("起動コマンド無しで保存したペインはシェルのまま戻る", async () => {
     await resetSessions(electronApp, page);
+    // ツールバーには値が入っているが、これは復元に混ざらない
+    await expect(page.locator("[data-testid=launch-command]")).toHaveValue("claude");
+
     await mockOpenDialog(electronApp, [wsPath()]);
     await page.locator("[data-testid=restore-workspace]").click();
     await waitForPaneCount(page, 2);
 
-    expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
-    expect(await writtenTo(electronApp, 1)).toEqual(["claude\r"]);
+    expect(await writtenTo(electronApp, 0)).toEqual([]);
+    expect(await writtenTo(electronApp, 1)).toEqual([]);
   });
 
   test("復元をキャンセルするとセッションは増えない", async () => {
@@ -200,9 +208,16 @@ test.describe("セッションごとの起動コマンドの往復", () => {
     ]);
   });
 
-  test("復元ではセッションごとの値がツールバーより優先される", async () => {
+  /**
+   * 復元は保存された構成をそのまま再現する。ツールバーの値では補わない（#26）。
+   *
+   * 補う実装だったとき、**素のシェルとして保存したペインが claude を起動して
+   * いた**。保存側は空の起動コマンドを項目ごと省くので、「意図して空」と
+   * 「古い形式で項目が無い」が同じ形になり、シェルが常に補完の対象になる。
+   */
+  test("復元は保存されたとおりに起動する（ツールバーの値で補わない）", async () => {
     await resetSessions(electronApp, page);
-    // ツールバーは claude のまま。保存済みの値が勝つことを見る
+    // ツールバーには値が入っている。これが混ざらないことを見る
     await expect(page.locator("[data-testid=launch-command]")).toHaveValue("claude");
 
     await mockOpenDialog(electronApp, [mixedPath()]);
@@ -211,8 +226,8 @@ test.describe("セッションごとの起動コマンドの往復", () => {
 
     expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
     expect(await writtenTo(electronApp, 1)).toEqual(["codex --resume\r"]);
-    // 値を持たないセッションはツールバーの値で補う（現行動作の維持）
-    expect(await writtenTo(electronApp, 2)).toEqual(["claude\r"]);
+    // 起動コマンドを持たないセッションは素のシェルのまま
+    expect(await writtenTo(electronApp, 2)).toEqual([]);
   });
 
   test("復元したペインのヘッダにも起動コマンドが出る", async () => {
@@ -224,7 +239,7 @@ test.describe("セッションごとの起動コマンドの往復", () => {
     await expect(page.locator("[data-testid=pane-command]")).toHaveText([
       "claude",
       "codex --resume",
-      "claude",
+      "",
     ]);
   });
 });

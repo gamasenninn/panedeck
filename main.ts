@@ -427,35 +427,36 @@ ipcMain.handle("workspace:save", async (_, name: string) => {
   }
 });
 
-ipcMain.handle(
-  "workspace:restore",
-  async (_, options: { initialCommand?: string; agent?: string } = {}) => {
-    const result = await dialog.showOpenDialog(parentWindow(), {
-      title: "セッション構成を復元",
-      properties: ["openFile"],
-      filters: [{ name: "Workspace", extensions: ["json"] }],
-    });
-    if (result.canceled || result.filePaths.length === 0) {
-      return { ok: false, canceled: true };
-    }
-
-    try {
-      const workspace = loadWorkspace(result.filePaths[0]);
-      const created = workspace.sessions.map((entry) =>
-        sessionManager.create({
-          ...entry,
-          // セッションごとの値を優先し、持たないものはツールバーの値で補う。
-          // 起動コマンドを持たない既存のワークスペースでも今までどおり動く
-          initialCommand: entry.initialCommand || options.initialCommand,
-          agent: entry.agent || options.agent,
-        })
-      );
-      for (const session of created) logWriter?.open(session.id, session.title);
-
-      persistSessions();
-      return { ok: true, name: workspace.name, sessions: created };
-    } catch (err) {
-      return { ok: false, error: (err as Error).message };
-    }
+/**
+ * 保存した構成を復元する。
+ *
+ * **保存されたものをそのまま再現する。ツールバーの値では補わない（#26）。**
+ * かつては起動コマンドを持たないエントリをツールバーの値で埋めていたが、
+ * 保存側は空の起動コマンドを項目ごと省くため、「意図して素のシェル」と
+ * 「古い形式で項目が無い」が同じ形になる。結果、シェルとして保存した
+ * ペインが復元のたびに claude を起動していた。
+ *
+ * 自動復元（restoreLastSession）と同じ経路になったので、
+ * 「どちらで戻したか」で結果が変わることも無くなる。
+ */
+ipcMain.handle("workspace:restore", async () => {
+  const result = await dialog.showOpenDialog(parentWindow(), {
+    title: "セッション構成を復元",
+    properties: ["openFile"],
+    filters: [{ name: "Workspace", extensions: ["json"] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { ok: false, canceled: true };
   }
-);
+
+  try {
+    const workspace = loadWorkspace(result.filePaths[0]);
+    const created = workspace.sessions.map((entry) => sessionManager.create(entry));
+    for (const session of created) logWriter?.open(session.id, session.title);
+
+    persistSessions();
+    return { ok: true, name: workspace.name, sessions: created };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});

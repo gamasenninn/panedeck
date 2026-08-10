@@ -834,10 +834,7 @@ document.getElementById("save-workspace")!.addEventListener("click", async () =>
 document
   .getElementById("restore-workspace")!
   .addEventListener("click", async () => {
-    const result = await api.restoreWorkspace({
-      initialCommand: launchCommandInput.value.trim(),
-      agent: agentSelectEl.value,
-    });
+    const result = await api.restoreWorkspace();
     if (result.ok === false && result.error) {
       showMessage(`復元できません: ${result.error}`, { error: true });
     } else if (result.ok) {

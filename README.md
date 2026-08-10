@@ -186,6 +186,8 @@ Setting both to `0` effectively turns cleanup off.
 
 With **restore on start** enabled, the layout is captured whenever sessions are added or removed, and comes back on the next launch.
 
+Restoring reproduces what was saved. The toolbar's launch command and agent are not mixed in, so a pane saved without a launch command comes back as a plain shell — it used to be filled in from the toolbar, which meant panes meant as shells started an agent instead.
+
 ## Project layout
 
 ```

@@ -206,8 +206,6 @@ export interface DeckApi {
   saveLog(id: string): Promise<FileResult>;
 
   saveWorkspace(name: string): Promise<FileResult>;
-  restoreWorkspace(options: {
-    initialCommand?: string;
-    agent?: string;
-  }): Promise<RestoreResult>;
+  /** 保存された構成をそのまま復元する。ツールバーの値は混ぜない（#26） */
+  restoreWorkspace(): Promise<RestoreResult>;
 }
