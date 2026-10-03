@@ -13,6 +13,16 @@ import { launchApp, closeApp } from "./helpers/electron-app";
  * OS に依存しないよう、コマンドは短命な node スクリプトにする。
  */
 
+/**
+ * **ここは既定の 30 秒では足りない。**
+ *
+ * 他の E2E はフェイクの pty と時計で動くが、このファイルは実プロセスを
+ * 起こし、終わるのを待ち、起こし直るのを待つ。CI の遅いマシンでは本体の
+ * 待ちで予算を使い切り、`afterEach` のアプリ終了に残らなかった（実際に
+ * そうなった —— 落ちたのは本体ではなく時間切れ）。
+ */
+test.describe.configure({ timeout: 120_000 });
+
 const TEMP_DIR = path.join(__dirname, "temp-service");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");
 /** サービスが「生きた証」を書き足すファイル。起動回数をここで数える */
