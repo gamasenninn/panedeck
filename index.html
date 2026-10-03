@@ -184,6 +184,7 @@
       }
 
       /* --- 設定ダイアログ --- */
+      #service-backdrop,
       #settings-backdrop {
         position: fixed;
         inset: 0;
@@ -194,10 +195,12 @@
         z-index: 100;
       }
 
+      #service-backdrop[hidden],
       #settings-backdrop[hidden] {
         display: none;
       }
 
+      #service-dialog,
       #settings-dialog {
         background: #161b22;
         border: 1px solid #30363d;
@@ -208,6 +211,7 @@
         overflow-y: auto;
       }
 
+      #service-dialog h2,
       #settings-dialog h2 {
         font-size: 15px;
         margin-bottom: 4px;
@@ -220,6 +224,46 @@
         padding-bottom: 4px;
         margin: 16px 0 10px;
         font-weight: 600;
+      }
+
+      /* 裏のコマンド（#29） */
+      #service-status {
+        /* 落ち続けているときに目で拾えるよう、状態で色を変える */
+        font-size: 11px;
+      }
+
+      #service-status.failing {
+        border-color: #f85149;
+        color: #ff7b72;
+      }
+
+      #service-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 10px;
+      }
+
+      #service-list button {
+        text-align: left;
+        font-size: 12px;
+      }
+
+      #service-list button.selected {
+        border-color: #58a6ff;
+      }
+
+      #service-log {
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 8px 10px;
+        font-size: 11px;
+        line-height: 1.5;
+        height: 46vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
       }
 
       #settings-dialog .setting {
@@ -567,6 +611,12 @@
       >
 
       <span id="trigger-error" data-testid="trigger-error" class="danger-text" hidden></span>
+
+      <!--
+        裏のコマンドの様子（#29）。押すとログが見られる。
+        **落ち続けていることを隠さない** —— 再起動の回数をここに出す
+      -->
+      <button id="service-status" data-testid="service-status" hidden></button>
       <span id="message" data-testid="message"></span>
       <span id="session-count" data-testid="session-count">0 セッション</span>
       <button id="close-all" class="danger" data-testid="close-all">全終了</button>
@@ -584,6 +634,22 @@
       設定ダイアログ。別ウィンドウにしていないのは preload と IPC がもう一組
       増えるため。ネイティブモーダルは E2E をブロックするので使えない
     -->
+    <div id="service-backdrop" data-testid="service-backdrop" hidden>
+      <div
+        id="service-dialog"
+        data-testid="service-dialog"
+        role="dialog"
+        aria-labelledby="service-title"
+      >
+        <h2 id="service-title">裏のコマンド</h2>
+        <div id="service-list" data-testid="service-list"></div>
+        <pre id="service-log" data-testid="service-log"></pre>
+        <div class="buttons">
+          <button id="service-close" data-testid="service-close">閉じる</button>
+        </div>
+      </div>
+    </div>
+
     <div id="settings-backdrop" data-testid="settings-backdrop" hidden>
       <div
         id="settings-dialog"

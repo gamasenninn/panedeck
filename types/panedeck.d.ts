@@ -159,6 +159,25 @@ export interface TriggerState {
   error: string;
 }
 
+/** 裏で走らせ続けるコマンド（#29） */
+export interface ServiceConfig {
+  /** 画面に出す名前。ログの宛先でもあるので重複させない */
+  name: string;
+  command: string;
+  /** 既定は always */
+  restart: "always" | "never";
+}
+
+/** 画面に出すためのサービスの様子（#29） */
+export interface ServiceState {
+  name: string;
+  /** running / restarting / stopped */
+  status: "running" | "restarting" | "stopped";
+  /** 続けて落ちた回数。走り続けられたら 0 に戻る */
+  restarts: number;
+  lastExitCode: number | null;
+}
+
 export interface Settings {
   /** 端末の文字サイズ (px) */
   fontSize: number;
@@ -180,6 +199,8 @@ export interface Settings {
   triggers: TriggerConfig[];
   /** 監視ファイルごとに、どこまで届けたか。再起動で飛ばさないため */
   triggerCursors: Record<string, number>;
+  /** 裏で走らせ続けるコマンド（#29） */
+  services: ServiceConfig[];
 }
 
 /** 一斉送信の絞り込み */
@@ -231,6 +252,10 @@ export interface DeckApi {
   listAgents(): Promise<AgentProfileSummary[]>;
   /** トリガーの様子。保留件数と、届けられない理由（#28） */
   listTriggers(): Promise<TriggerState[]>;
+  /** 裏のコマンドの様子。落ち続けていることを隠さない（#29） */
+  listServices(): Promise<ServiceState[]>;
+  /** 裏のコマンドの出力。ペインへは流さず、ここで見る（#29） */
+  getServiceLog(name: string): Promise<string>;
 
   input(id: string, data: string): void;
   resize(id: string, cols: number, rows: number): void;

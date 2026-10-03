@@ -74,6 +74,7 @@ test.describe("normalizeSettings", () => {
       "logMaxTotalMB",
       "logRetentionDays",
       "logStripAnsi",
+      "services",
       "triggerCursors",
       "triggers",
     ]);
@@ -408,5 +409,54 @@ test.describe("triggerCursors", () => {
       normalizeSettings({ triggerCursors: { "a.jsonl": 120, "b.jsonl": "x", "c.jsonl": -5 } })
         .triggerCursors
     ).toEqual({ "a.jsonl": 120 });
+  });
+});
+
+/**
+ * 裏で走らせ続けるコマンドの設定（#29）。
+ *
+ * トリガーと同じく、読めない項目は落として残りを活かす。
+ */
+test.describe("services", () => {
+  test("既定は空", () => {
+    expect(normalizeSettings({}).services).toEqual([]);
+  });
+
+  test("名前とコマンドが揃ったものだけ残す", () => {
+    const services = normalizeSettings({
+      services: [
+        { name: "feed", command: "node stream.js" },
+        { name: "名前だけ" },
+        { command: "コマンドだけ" },
+        "文字列",
+      ],
+    }).services;
+
+    expect(services).toEqual([{ name: "feed", command: "node stream.js", restart: "always" }]);
+  });
+
+  test("restart は never だけ受け付け、それ以外は always に寄せる", () => {
+    const services = normalizeSettings({
+      services: [
+        { name: "a", command: "x", restart: "never" },
+        { name: "b", command: "x", restart: "ときどき" },
+        { name: "c", command: "x" },
+      ],
+    }).services;
+
+    expect(services.map((s) => s.restart)).toEqual(["never", "always", "always"]);
+  });
+
+  /** 名前はログの宛先なので、重なると取り違える */
+  test("同じ名前は最初のものだけ残す", () => {
+    const services = normalizeSettings({
+      services: [
+        { name: "feed", command: "一つ目" },
+        { name: "feed", command: "二つ目" },
+      ],
+    }).services;
+
+    expect(services).toHaveLength(1);
+    expect(services[0].command).toBe("一つ目");
   });
 });

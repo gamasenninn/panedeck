@@ -234,6 +234,25 @@ PaneDeck strips newlines and control characters from substituted values — one 
 
 **Substituting content somebody else wrote — a message body, say — lets that person type into your agent as you.** PaneDeck has no way to know which fields are safe. **Send identifiers and let the agent fetch the content through its own tools.**
 
+### Keeping a command running (services)
+
+A trigger covers the case where something on this machine writes the file. When the source is remote, something local has to hold the connection and write what it receives — and that something, run inside an agent's pane, dies with the pane.
+
+```json
+"services": [{
+  "name": "remote-feed",
+  "command": "node C:/Users/me/bin/stream-to-file.js",
+  "restart": "always"
+}]
+```
+
+- Started with PaneDeck, **stopped with it on every platform**. On Windows a child that outlives its parent is the default rather than the exception, so the whole process tree is killed, not just the shell PaneDeck spawned
+- Restarted on exit with a **backoff** (1s, 2s, 5s, 15s, 30s, 60s, then holding at 60s), so a command that fails immediately does not spin. A service that ran for 30 seconds is treated as having worked, and its next failure starts from the short wait again
+- **stdout and stderr go to a log you open from the toolbar**, never to a pane. The toolbar shows how many services there are and, when any is restarting or stopped, how many times it has fallen over — **a service quietly failing is the thing this is meant to make visible**
+- `"restart": "never"` runs it once and leaves it. Any other value, including a typo, means `always`: reading a misspelling as "do not restart" would let it stop silently
+
+**The command's job is to write a file; a trigger watches the file.** Output is deliberately not piped into a pane: if PaneDeck stops after the command has received a line but before a pane has been told, the line is still in the file when it comes back. Piping straight into a pane would lose exactly those lines.
+
 ## Project layout
 
 ```
@@ -250,6 +269,8 @@ panedeck/
 │   ├── command.ts           # launch command normalisation
 │   ├── settings.ts          # reading and writing settings
 │   ├── log-writer.ts        # buffering output and appending to files
+│   ├── service-runner.ts    # restarting background commands (clock injected)
+│   ├── spawn-service.ts     # real process spawning (the only child_process user)
 │   └── workspace.ts         # saving and restoring layouts
 ├── types/               # types shared across layers
 ├── build/               # icon (svg is the source, png is generated)

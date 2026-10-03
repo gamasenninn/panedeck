@@ -5,6 +5,7 @@
 import type {
   Session,
   SessionStatus,
+  ServiceState,
   Settings,
   TriggerState,
 } from "./types/panedeck";
@@ -20,6 +21,7 @@ import {
   targetLabel,
 } from "./renderer/broadcast.js";
 import type { BroadcastPane } from "./renderer/broadcast.js";
+import { serviceSummary, serviceLabel } from "./renderer/service-label.js";
 
 // contextBridge が公開したグローバル。モジュールなので、かつて衝突を招いた
 // `const deck` という名前を避ける必要はもう無いが、呼び分けやすさで api のまま
@@ -72,9 +74,18 @@ const logMaxTotalMbEl = document.getElementById(
 const autoLogIndicatorEl = document.getElementById("auto-log-indicator")!;
 const settingsBackdropEl = document.getElementById("settings-backdrop")!;
 const triggerErrorEl = document.getElementById("trigger-error")!;
+const serviceStatusEl = document.getElementById("service-status")!;
+const serviceBackdropEl = document.getElementById("service-backdrop")!;
+const serviceListEl = document.getElementById("service-list")!;
+const serviceLogEl = document.getElementById("service-log")!;
 
 /** セッション id → ペイン */
 const panes = new Map<string, Pane>();
+
+/** 裏のコマンドの様子（#29）。真実はメインプロセスが持つので突き合わせるだけ */
+let services: ServiceState[] = [];
+/** ログ窓で選ばれているサービス名。null なら未選択 */
+let selectedService: string | null = null;
 
 /**
  * createPane が進行中のセッション id。
@@ -566,6 +577,49 @@ function applyTriggers(states: TriggerState[]) {
   triggerErrorEl.hidden = errors.length === 0;
 }
 
+/**
+ * 裏のコマンドの様子をツールバーに出す（#29）。
+ *
+ * **出力はペインへ流さない。** ここで見るだけ。流していたら、受け取ってから
+ * 伝えるまでに止まった行が失われる（間にファイルを挟む理由がそれ）。
+ */
+function applyServices(states: ServiceState[]) {
+  services = states;
+
+  const summary = serviceSummary(states);
+  serviceStatusEl.hidden = summary === null;
+  if (summary) {
+    serviceStatusEl.textContent = summary.text;
+    serviceStatusEl.classList.toggle("failing", summary.failing);
+  }
+
+  // 開いている間は中身も追いかける（落ちた瞬間を見ていられるように）
+  if (!serviceBackdropEl.hidden) renderServiceList();
+}
+
+function renderServiceList() {
+  serviceListEl.textContent = "";
+
+  for (const state of services) {
+    const button = document.createElement("button");
+    button.textContent = serviceLabel(state);
+    button.dataset.service = state.name;
+    button.classList.toggle("selected", state.name === selectedService);
+    button.addEventListener("click", () => selectService(state.name));
+    serviceListEl.append(button);
+  }
+}
+
+async function selectService(name: string) {
+  selectedService = name;
+  renderServiceList();
+
+  const log = await api.getServiceLog(name);
+  serviceLogEl.textContent = log === "" ? "（まだ出力がありません）" : log;
+  // 新しいほうを見たいので末尾へ寄せる
+  serviceLogEl.scrollTop = serviceLogEl.scrollHeight;
+}
+
 async function sync() {
   const sessions = await api.listSessions();
   const alive = new Set(sessions.map((s) => s.id));
@@ -602,6 +656,7 @@ async function sync() {
   emptyState.style.display = count === 0 ? "" : "none";
   updateBroadcastTarget();
   applyTriggers(await api.listTriggers());
+  applyServices(await api.listServices());
 }
 
 /**
@@ -867,6 +922,23 @@ broadcastInput.addEventListener("keydown", (event) => {
 
 waitingOnlyEl.addEventListener("change", updateBroadcastTarget);
 
+// --- 裏のコマンドのログ窓（#29） ---
+
+serviceStatusEl.addEventListener("click", () => {
+  serviceBackdropEl.hidden = false;
+  renderServiceList();
+  // 何も選ばれていなければ先頭を開く（押してから更に選ばせない）
+  if (services.length > 0) void selectService(selectedService ?? services[0].name);
+});
+
+document.getElementById("service-close")!.addEventListener("click", () => {
+  serviceBackdropEl.hidden = true;
+});
+
+serviceBackdropEl.addEventListener("click", (event) => {
+  if (event.target === serviceBackdropEl) serviceBackdropEl.hidden = true;
+});
+
 // --- 設定ダイアログ ---
 
 document.getElementById("open-settings")!.addEventListener("click", openSettings);
@@ -880,7 +952,9 @@ settingsBackdropEl.addEventListener("click", (event) => {
 // Esc で閉じる。**開いているときだけ**拾う。端末では Esc は pty へ送る
 // 必要があり、常時横取りすると実行中の処理を中断できなくなる
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !settingsBackdropEl.hidden) closeSettings();
+  if (event.key !== "Escape") return;
+  if (!settingsBackdropEl.hidden) closeSettings();
+  else if (!serviceBackdropEl.hidden) serviceBackdropEl.hidden = true;
 });
 
 fontSizeInput.addEventListener("change", () =>

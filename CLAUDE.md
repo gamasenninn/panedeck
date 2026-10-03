@@ -163,6 +163,8 @@ panedeck/
 │   ├── settings.ts          # アプリ設定の読み書き（保存先パスは注入）
 │   ├── log-writer.ts        # 出力のバッファリングとファイル追記
 │   ├── log-retention.ts     # 古いログの片付け（索引で自作分だけを対象に）
+│   ├── service-runner.ts    # 裏のコマンドの起こし直し（時刻も起動も注入）
+│   ├── spawn-service.ts     # 実プロセスの起動（ここだけ child_process を知る）
 │   └── workspace.ts         # セッション構成の保存・復元
 ├── types/
 │   ├── panedeck.d.ts        # 層をまたぐ受け渡しの形（Session / DeckApi など）
@@ -202,7 +204,7 @@ panedeck/
 - **セキュリティ**: `contextIsolation: true`, `nodeIntegration: false`
 - **IPC 通信**: Main ↔ Preload ↔ Renderer の3層構造
 - **IPC チャンネル**: `session:*`, `workspace:*`, `log:*`, `settings:*`, `agent:*`,
-  `clipboard:*`
+  `clipboard:*`, `trigger:*`, `service:*`
 - 戻り値が要るものは `invoke`/`handle`、キー入力など高頻度のものは `send`/`on`
 - レンダラは ES モジュールとして読み込む。バンドラを挟まないので**相対 import には
   拡張子 `.js` が要る**

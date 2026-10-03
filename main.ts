@@ -15,6 +15,8 @@ import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace"
 import { listProfiles } from "./lib/agent-profiles";
 import { TriggerWatcher } from "./lib/trigger-watcher";
 import { createScreen } from "./lib/screen";
+import { ServiceRunner } from "./lib/service-runner";
+import { spawnService } from "./lib/spawn-service";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
 import { cleanupLogs } from "./lib/log-retention";
@@ -110,6 +112,16 @@ const TRIGGER_POLL_MS = 300;
 
 /** 設定にトリガーが無ければ null のまま */
 let triggerWatcher: TriggerWatcher | null = null;
+
+/**
+ * 落ちたサービスを起こし直すか見にいく間隔 (ms)（#29）。
+ *
+ * 待ち時間は秒単位なので、この粗さで足りる。
+ */
+const SERVICE_TICK_MS = 1_000;
+
+/** 設定にサービスが無ければ null のまま */
+let serviceRunner: ServiceRunner | null = null;
 
 /**
  * 失敗を通知して、それ以上溜め込まないようにする。
@@ -275,6 +287,21 @@ function startTriggers(): void {
   }, TRIGGER_POLL_MS);
 }
 
+/**
+ * 設定のサービスを起こす（#29）。
+ *
+ * 出力はログに溜めるだけで、ペインへは流さない。ペインへ伝えるのは
+ * ファイルを見ているトリガーの仕事（#28）。
+ */
+function startServices(): void {
+  const settings = readSettings(settingsPath());
+  if (settings.services.length === 0) return;
+
+  serviceRunner = new ServiceRunner({ spawn: spawnService });
+  serviceRunner.start(settings.services);
+  setInterval(() => serviceRunner?.tick(), SERVICE_TICK_MS);
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -328,18 +355,23 @@ app.whenReady().then(() => {
   }, LOG_FLUSH_MS);
 
   startTriggers();
+  startServices();
 });
 
 app.on("window-all-closed", () => {
   // 書き残しを先に吐き出してからセッションを畳む
   logWriter?.closeAll();
   sessionManager.closeAll();
+  // 裏のコマンドも道連れにする。残すと、閉じたのに動き続ける（#29）
+  serviceRunner?.stopAll();
   if (process.platform !== "darwin") app.quit();
 });
 
 app.on("will-quit", () => {
   logWriter?.closeAll();
   sessionManager.closeAll();
+  // window-all-closed を通らない終わり方（macOS の終了など）でも必ず止める
+  serviceRunner?.stopAll();
 });
 
 /** ダイアログの親。まだウィンドウが無い場面では渡さない */
@@ -380,6 +412,11 @@ ipcMain.handle("agent:list", () => listProfiles());
 
 /** トリガーの様子（保留件数・届かない理由）。画面に出すためだけのもの（#28） */
 ipcMain.handle("trigger:list", () => triggerWatcher?.state() ?? []);
+
+ipcMain.handle("service:list", () => serviceRunner?.state() ?? []);
+ipcMain.handle("service:log", (_event, name: string) =>
+  serviceRunner?.log(name) ?? ""
+);
 
 ipcMain.handle("session:close", (_, id: string) => {
   if (logWriter) reportLogFailures(logWriter.close(id));

@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-import type { Settings, TriggerConfig } from "../types/panedeck";
+import type { Settings, TriggerConfig, ServiceConfig } from "../types/panedeck";
 
 /**
  * アプリ設定の読み書き。
@@ -48,7 +48,27 @@ export const DEFAULT_SETTINGS: Settings = {
   triggers: [],
   // どこまで届けたか。閉じている間に増えた行を次の起動で飛ばさないため
   triggerCursors: {},
+
+  // 裏で走らせ続けるコマンド（#29）。既定は無し
+  services: [],
 };
+
+/**
+ * サービス 1 件を、使える形だけに整える。読めなければ null。
+ *
+ * `restart` は **never だけを受け付け、それ以外は always に寄せる**。
+ * 打ち間違いを「起こし直さない」と解釈すると、落ちたまま黙って止まる。
+ */
+function normalizeService(raw: unknown): ServiceConfig | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const source = raw as Record<string, unknown>;
+
+  const name = typeof source.name === "string" ? source.name.trim() : "";
+  const command = typeof source.command === "string" ? source.command.trim() : "";
+  if (name === "" || command === "") return null;
+
+  return { name, command, restart: source.restart === "never" ? "never" : "always" };
+}
 
 /**
  * トリガー 1 件を、使える形だけに整える。読めなければ null。
@@ -153,6 +173,16 @@ export function normalizeSettings(raw: unknown): Settings {
       : DEFAULT_SETTINGS.triggers,
 
     triggerCursors: normalizeCursors(source.triggerCursors),
+
+    // 名前はログの宛先なので、重なったら最初のものだけ残す（取り違えを避ける）
+    services: Array.isArray(source.services)
+      ? source.services
+          .map(normalizeService)
+          .filter((s): s is ServiceConfig => s !== null)
+          .filter(
+            (s, i, all) => all.findIndex((other) => other.name === s.name) === i
+          )
+      : DEFAULT_SETTINGS.services,
 
     logMaxTotalMB: clampNumber(
       source.logMaxTotalMB,
