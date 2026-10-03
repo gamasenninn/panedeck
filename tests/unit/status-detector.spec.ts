@@ -380,3 +380,145 @@ test.describe("detectStatus - 待機パターンの差し替え", () => {
     ).toBe(STATUS.EXITED);
   });
 });
+
+/**
+ * 「入力欄で待っている」と「質問で止まっている」を分ける（#27）。
+ *
+ * 同じ waiting でも意味が違う。入力欄なら打った文字は指示になるが、確認
+ * ダイアログや選択肢なら**打鍵がそのまま回答になる**。見ずに送る経路
+ * （入力待ちのみの一斉入力・自動送信）では、ここが「配達」と「承認」を
+ * 分ける唯一の壁になる。
+ *
+ * 分割は asking のパターンが与えられたときだけ働く。**区別できないなら
+ * ready とは言わない** —— 危険なのは asking を取りこぼす側なので、
+ * 見分けられないプロファイルは従来の waiting にまとめて落ちる。
+ */
+test.describe("detectStatus - ready / asking の分割", () => {
+  const quiet = { msSinceLastOutput: QUIET_MS + 100 };
+  const READY = [/│\s*>/];
+  const ASKING = [/❯/, /\(y\/n\)/i, /\[y\/n\]/i];
+
+  test("質問で止まっていれば asking", () => {
+    expect(
+      detectStatus({
+        ...quiet,
+        tail: "Do you want to proceed? (y/n)",
+        readyPatterns: READY,
+        askingPatterns: ASKING,
+      })
+    ).toBe(STATUS.ASKING);
+  });
+
+  test("入力欄で待っていれば ready", () => {
+    expect(
+      detectStatus({
+        ...quiet,
+        tail: "╭────────╮\n│ >      │\n╰────────╯",
+        readyPatterns: READY,
+        askingPatterns: ASKING,
+      })
+    ).toBe(STATUS.READY);
+  });
+
+  /**
+   * 画面の書き換え途中や、ダイアログの上に入力欄の枠が残っているときは
+   * 両方が見える。迷ったら送らない側へ倒す。
+   */
+  test("両方見えているときは asking を優先する", () => {
+    expect(
+      detectStatus({
+        ...quiet,
+        tail: "│ >      │\nAllow this command? (y/n)",
+        readyPatterns: READY,
+        askingPatterns: ASKING,
+      })
+    ).toBe(STATUS.ASKING);
+  });
+
+  test("どちらにも当てはまらなければ idle", () => {
+    expect(
+      detectStatus({
+        ...quiet,
+        tail: "Done.",
+        readyPatterns: READY,
+        askingPatterns: ASKING,
+      })
+    ).toBe(STATUS.IDLE);
+  });
+
+  test("分割を持たないプロファイルは従来どおり waiting", () => {
+    expect(
+      detectStatus({ ...quiet, tail: "│ > ", waitingPatterns: READY })
+    ).toBe(STATUS.WAITING);
+  });
+
+  /**
+   * asking を見分けられないのに ready と言い切ると、確認ダイアログが
+   * 「送ってよい」側に回る。分割は asking があるときだけ有効にする。
+   */
+  test("ready だけ与えられても ready とは言わない", () => {
+    expect(
+      detectStatus({
+        ...quiet,
+        tail: "│ > ",
+        readyPatterns: READY,
+        waitingPatterns: READY,
+      })
+    ).toBe(STATUS.WAITING);
+  });
+
+  test("asking は実行中より優先されない（出力が動いていれば running）", () => {
+    expect(
+      detectStatus({
+        msSinceLastOutput: 0,
+        tail: "Allow this command? (y/n)",
+        readyPatterns: READY,
+        askingPatterns: ASKING,
+      })
+    ).toBe(STATUS.RUNNING);
+  });
+});
+
+/**
+ * 知らない画面は ready に落とさない（#27）。
+ *
+ * `❯` のようなカーソルは、入力欄にも選択式ダイアログにも出る。実機の採取で
+ * 分かったのは、**通常のプロンプトにはフッター（`manual mode on` など）が
+ * あり、ダイアログの間は消える**こと。そこで ready は「入力欄だと言える印」が
+ * あるときだけにし、`❯` しか無い画面は「何かが待っているが見分けられない」
+ * として waiting に落とす。
+ *
+ * こうしておくと、将来 PaneDeck が知らないダイアログが増えても、
+ * 壊れ方が ready 側（送ってよい）ではなく waiting 側（送らない）になる。
+ */
+test.describe("detectStatus - 判別できない待ちは waiting に落とす", () => {
+  const quiet = { msSinceLastOutput: QUIET_MS + 100 };
+  const patterns = {
+    askingPatterns: [/Do you want to/i],
+    readyPatterns: [/\bmanual mode on\b/i],
+    waitingPatterns: [/❯/],
+  };
+
+  test("入力欄の印があれば ready", () => {
+    expect(
+      detectStatus({ ...quiet, tail: "❯\n⏸ manual mode on · ? for shortcuts", ...patterns })
+    ).toBe(STATUS.READY);
+  });
+
+  test("質問の印があれば asking", () => {
+    expect(
+      detectStatus({ ...quiet, tail: "Do you want to create note.txt?\n❯ 1 Yes", ...patterns })
+    ).toBe(STATUS.ASKING);
+  });
+
+  /** 知らない選択式ダイアログ。カーソルはあるが入力欄の印は無い */
+  test("カーソルだけで入力欄の印が無ければ waiting", () => {
+    expect(
+      detectStatus({ ...quiet, tail: "Which approach?\n❯ 1. A\n  2. B", ...patterns })
+    ).toBe(STATUS.WAITING);
+  });
+
+  test("どの印も無ければ idle", () => {
+    expect(detectStatus({ ...quiet, tail: "Done.", ...patterns })).toBe(STATUS.IDLE);
+  });
+});

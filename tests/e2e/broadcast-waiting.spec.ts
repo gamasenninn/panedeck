@@ -37,7 +37,12 @@ async function typeAndSend(text: string) {
   await page.locator("[data-testid=broadcast-send]").click();
 }
 
-/** 入力待ち / 待機 / 実行中 が 1 つずつ並んだデッキを用意する。 */
+/**
+ * 指示待ち / 待機 / 実行中 が 1 つずつ並んだデッキを用意する。
+ *
+ * 指示待ちは**通常プロンプトのフッターがある画面**で作る（#27）。カーソルだけ
+ * では「入力欄か選択式ダイアログか」を見分けられず、判別不可に落ちるため。
+ */
 async function givenMixedDeck() {
   await resetSessions(electronApp, page);
   await waitingOnly().uncheck();
@@ -48,13 +53,13 @@ async function givenMixedDeck() {
   await waitForPaneCount(page, 3);
 
   await advanceClock(electronApp, 1000);
-  await emitPtyData(electronApp, 0, "╭────────╮\n│ >      │\n╰────────╯");
+  await emitPtyData(electronApp, 0, "❯\n⏸ manual mode on · ? for shortcuts");
   await emitPtyData(electronApp, 1, "Done.");
   await advanceClock(electronApp, 1000);
   // 3 番目だけ直近に出力があるので実行中のまま
   await emitPtyData(electronApp, 2, "building...");
 
-  await expect(statusBadge(0)).toHaveText("入力待ち");
+  await expect(statusBadge(0)).toHaveText("指示待ち");
   await expect(statusBadge(1)).toHaveText("待機");
   await expect(statusBadge(2)).toHaveText("実行中");
 }
@@ -78,7 +83,7 @@ async function givenNoWaitingDeck() {
   await expect(statusBadge(1)).toHaveText("終了");
 }
 
-test("入力待ちのペインにだけ一斉送信する", async () => {
+test("指示待ちのペインにだけ一斉送信する", async () => {
   await givenMixedDeck();
   await waitingOnly().check();
   await typeAndSend("続けて");
@@ -97,28 +102,28 @@ test("チェックを外せば全ペインへ送る（既定の挙動は変え�
   expect(await writtenTo(electronApp, 2)).toEqual(["全員へ\r"]);
 });
 
-test("送信先の表示が入力待ちの数になる", async () => {
+test("送信先の表示が指示待ちの数になる", async () => {
   await givenMixedDeck();
   await expect(target()).toHaveText("送信先: 全 3 ペイン");
 
   await waitingOnly().check();
-  await expect(target()).toHaveText("送信先: 入力待ち 1 ペイン");
+  await expect(target()).toHaveText("送信先: 指示待ち 1 ペイン");
 
   await waitingOnly().uncheck();
   await expect(target()).toHaveText("送信先: 全 3 ペイン");
 });
 
-test("選択と併用すると選択の中の入力待ちに絞られる", async () => {
+test("選択と併用すると選択の中の指示待ちに絞られる", async () => {
   await givenMixedDeck();
   await waitingOnly().check();
 
-  // 待機中のペインだけ選ぶ → 入力待ちは 0 件
+  // 待機中のペインだけ選ぶ → 指示待ちは 0 件
   await page.locator("[data-testid=pane-select]").nth(1).check();
-  await expect(target()).toHaveText("送信先: 選択のうち入力待ち 0 ペイン");
+  await expect(target()).toHaveText("送信先: 選択のうち指示待ち 0 ペイン");
 
-  // 入力待ちのペインも選ぶ → 1 件
+  // 指示待ちのペインも選ぶ → 1 件
   await page.locator("[data-testid=pane-select]").nth(0).check();
-  await expect(target()).toHaveText("送信先: 選択のうち入力待ち 1 ペイン");
+  await expect(target()).toHaveText("送信先: 選択のうち指示待ち 1 ペイン");
 
   await typeAndSend("選択かつ入力待ち");
   expect(await writtenTo(electronApp, 0)).toEqual(["選択かつ入力待ち\r"]);
@@ -129,13 +134,13 @@ test("選択と併用すると選択の中の入力待ちに絞られる", async
 test("状態が変わると送信先の数も追従する", async () => {
   await givenMixedDeck();
   await waitingOnly().check();
-  await expect(target()).toHaveText("送信先: 入力待ち 1 ペイン");
+  await expect(target()).toHaveText("送信先: 指示待ち 1 ペイン");
 
-  // 実行中だったペインが入力待ちで止まる
-  await emitPtyData(electronApp, 2, "\n❯ 1. Yes\n  2. No");
+  // 実行中だったペインが入力欄まで戻る
+  await emitPtyData(electronApp, 2, "\n❯\n⏸ manual mode on · ? for shortcuts");
   await advanceClock(electronApp, 1000);
 
-  await expect(target()).toHaveText("送信先: 入力待ち 2 ペイン");
+  await expect(target()).toHaveText("送信先: 指示待ち 2 ペイン");
 });
 
 test.describe("該当が 0 件のとき", () => {
@@ -193,7 +198,7 @@ test.describe("特殊キー", () => {
       await givenMixedDeck();
       await waitingOnly().check();
       // 進めるキーなら 1 件しか対象にならない状況
-      await expect(target()).toHaveText("送信先: 入力待ち 1 ペイン");
+      await expect(target()).toHaveText("送信先: 指示待ち 1 ペイン");
 
       await page.locator("[data-testid=key-ctrl-c]").click();
 

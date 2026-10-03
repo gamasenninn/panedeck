@@ -104,7 +104,12 @@ test("エージェントごとに入力待ちの判定が変わる", async () =>
   await expect(statusBadge(1)).toHaveText("待機");
 });
 
-test("共通の確認プロンプトはどのエージェントでも入力待ちになる", async () => {
+/**
+ * 確認プロンプトはどのエージェントでも拾う。ただし #27 以降、**見分けられる
+ * プロファイルは「確認待ち」と言い切る**。codex は入力欄と選択肢がどちらも
+ * 行頭 `›` で出るため分割できず、従来どおり「入力待ち」のまま。
+ */
+test("共通の確認プロンプトはどのエージェントでも拾う", async () => {
   await resetSessions(electronApp, page);
   await createSession(page, { cwd: "C:\\app\\repo-a", agent: "claude" });
   await createSession(page, { cwd: "C:\\app\\repo-b", agent: "codex" });
@@ -115,7 +120,9 @@ test("共通の確認プロンプトはどのエージェントでも入力待�
   await emitPtyData(electronApp, 1, "Overwrite? (y/n)");
   await advanceClock(electronApp, 1000);
 
-  await expect(statusBadge(0)).toHaveText("入力待ち");
+  // claude は分割できるので「確認待ち」まで言える
+  await expect(statusBadge(0)).toHaveText("確認待ち");
+  // codex は分割できないので、従来どおりまとめた「入力待ち」
   await expect(statusBadge(1)).toHaveText("入力待ち");
 });
 

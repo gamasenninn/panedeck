@@ -62,12 +62,16 @@ test("Claude の入力ボックスで止まると入力待ちになる", async (
   await expect(statusBadge()).toHaveText("入力待ち");
 });
 
-test("選択肢プロンプトも入力待ちになる", async () => {
+/**
+ * 既定の claude では、問いかけは「確認待ち」として区別される（#27）。
+ * 打鍵がそのまま回答になる状態なので、テキストの一斉送信から外れる。
+ */
+test("選択肢プロンプトは確認待ちになる", async () => {
   await givenPanes(1);
   await emitPtyData(electronApp, 0, "Do you want to proceed?\n❯ 1. Yes\n  2. No");
   await advanceClock(electronApp, 1000);
 
-  await expect(statusBadge()).toHaveText("入力待ち");
+  await expect(statusBadge()).toHaveText("確認待ち");
 });
 
 test("プロセスが終了すると終了になる", async () => {

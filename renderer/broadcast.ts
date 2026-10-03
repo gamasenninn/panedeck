@@ -9,7 +9,7 @@
  */
 
 import type { SessionStatus, BroadcastOptions } from "../types/panedeck";
-import { WAITING } from "./constants.js";
+import { WAITING, READY, ASKING } from "./constants.js";
 
 /** 送信先を決めるのに要るだけの、ペイン 1 枚ぶんの情報 */
 export interface BroadcastPane {
@@ -35,14 +35,18 @@ export function targetIds(panes: BroadcastPane[]): string[] | null {
 }
 
 /**
- * 状態による絞り込み。
+ * テキストを送るときの絞り込み。**指示待ちだけ**（#27）。
  *
- * 絞り込み自体はメインプロセスに委ねる。送信可否は、その場で状態を
- * 算出できる側が決める。
+ * 確認待ちのペインへ文字を送ると、それは指示ではなく**ダイアログへの回答**に
+ * なる。判別できない `waiting` も外す —— 見分けられない以上「送ってよい」とは
+ * 言えないため。
  */
-export function broadcastOptions(waitingOnly: boolean): BroadcastOptions | undefined {
-  return waitingOnly ? { onlyStatus: WAITING } : undefined;
+export function textOptions(waitingOnly: boolean): BroadcastOptions | undefined {
+  return waitingOnly ? { onlyStatus: [READY] } : undefined;
 }
+
+/** 進めるキー（Enter / ↑ / ↓）が届く状態。止まっているものすべて */
+const ADVANCE_TARGETS = [READY, ASKING, WAITING];
 
 /**
  * 動いているペインを止めるためのキー。
@@ -71,7 +75,9 @@ export function optionsForKey(
   key: string,
   waitingOnly: boolean
 ): BroadcastOptions | undefined {
-  return broadcastOptions(waitingOnly && !isInterruptKey(key));
+  if (!waitingOnly || isInterruptKey(key)) return undefined;
+  // 進めるキーは、止まっているペインすべてが対象。確認待ちを進めるのが主用途
+  return { onlyStatus: ADVANCE_TARGETS };
 }
 
 /** 送信先が 0 件だったときの説明。 */
@@ -97,8 +103,23 @@ export function targetLabel(panes: BroadcastPane[], waitingOnly: boolean): strin
       : `送信先: 全 ${targets.length} ペイン`;
   }
 
-  const count = targets.filter((pane) => pane.status === WAITING).length;
-  return scoped
-    ? `送信先: 選択のうち入力待ち ${count} ペイン`
-    : `送信先: 入力待ち ${count} ペイン`;
+  const count = (status: SessionStatus) =>
+    targets.filter((pane) => pane.status === status).length;
+
+  const ready = count(READY);
+  // 外れたぶんは黙って減らさない。送る前に読む一行に出す（#27）
+  const excluded = [
+    [count(ASKING), "確認待ち"],
+    [count(WAITING), "判別不可"],
+  ] as const;
+  const note = excluded
+    .filter(([n]) => n > 0)
+    .map(([n, label]) => `${label} ${n}`)
+    .join("・");
+
+  const head = scoped
+    ? `送信先: 選択のうち指示待ち ${ready} ペイン`
+    : `送信先: 指示待ち ${ready} ペイン`;
+
+  return note ? `${head}（${note} は対象外）` : head;
 }

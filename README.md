@@ -100,6 +100,7 @@ What you type in the bar at the bottom goes to several panes at once.
 - With **no** pane checkboxes ticked it goes to every pane; with some ticked, only to those
 - **入力待ちのみ** ("waiting only") narrows it to panes that are stopped waiting for input. Combined with checkboxes, both conditions apply
 - The filtering happens in the main process against the state at send time — what the renderer displays can be up to 300ms stale
+- **What is sent decides who receives it.** Text reaches `指示待ち` panes only; Enter, ↑ and ↓ reach every stopped pane (`指示待ち`, `確認待ち` and `入力待ち`). Panes left out are named in the target line, e.g. `送信先: 指示待ち 2 ペイン（確認待ち 1 は対象外）`
 - If nothing matches, nothing is sent and the input is not cleared
 
 ### Special keys
@@ -150,9 +151,17 @@ xterm passes input straight through to the pty, so untouched, `Ctrl+C` is an int
 | Badge | Meaning | Rule |
 |---|---|---|
 | 実行中 (running) | Something is happening | Output within the last 400ms |
-| 入力待ち (waiting) | **You need to do something** | Output stopped and the tail matches the profile's waiting patterns |
-| 待機 (idle) | Nothing is running | Output stopped, no pattern matched |
+| 指示待ち (ready) | At its input box. **What you type becomes an instruction** | Output stopped, an input-box marker matched |
+| 確認待ち (asking) | Stopped on a question. **A keystroke becomes the answer** | Output stopped, a question marker matched |
+| 入力待ち (waiting) | Something is waiting, but the two above **cannot be told apart** | Output stopped, a waiting pattern matched |
+| 待機 (idle) | Nothing is running | Output stopped, nothing matched |
 | 終了 (exited) | The process ended | The pty reported an exit |
+
+The split exists because the difference only matters when text is sent without looking: type into a pane showing a permission dialog and the text does not become an instruction, it answers the dialog.
+
+Whether a profile can be split is per profile. **One that cannot stays on the combined `入力待ち` and never guesses `指示待ち`** — a false positive is worse than a miss. Of the bundled profiles only Claude Code splits; codex draws both its input box and its choices with a leading `›`.
+
+A cursor glyph is not enough on its own. In the real Claude Code, `❯` appears both at the input box and as the selection cursor inside a confirmation dialog, so `指示待ち` requires a marker that says *input box* — the footer of the ordinary prompt. A screen carrying only a cursor falls back to `入力待ち`, which means **an unfamiliar dialog breaks towards not sending rather than towards sending**.
 
 Detection is a pure function in `lib/status-detector.ts` and looks at the last 10 lines only.
 

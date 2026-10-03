@@ -40,6 +40,12 @@ export const COMMON_WAITING_PATTERNS: RegExp[] = [
  * 正規表現を入れると誤判定（実行中を入力待ちと見なす）が起きて主機能の
  * 信頼性が落ちる。
  *
+ * **codex は #27 でも分割していない。** 実機（gpt-5.5）の入力欄は
+ * `› Ask Codex to do anything`、選択肢は `› 1. Yes, continue` で、入力欄の
+ * 目印になりうるのは空のときだけ出る案内文しかない。権限ダイアログは採取時に
+ * 使用上限へ当たって到達できなかった。見分けられる確証が無いまま分割すると、
+ * 知らないダイアログが ready（送ってよい）側へ落ちる。
+ *
  * Gemini CLI は一度入れたが外した。角丸ボックス `│ >` を使い判定自体は
  * できていたものの、実機で日本語が入力できず（PaneDeck からは UTF-8 で
  * 正しく届いていることを確認済み）、CLI 自体が更新の対象から外れている
@@ -51,7 +57,16 @@ export const AGENT_PROFILES: AgentProfile[] = [
     id: "claude",
     name: "Claude Code",
     command: "claude",
+    // 分割できないときの土台。カーソルは入力欄にもダイアログにも出るので、
+    // これだけでは「送ってよいか」は決められない
     waitingPatterns: WAITING_PATTERNS,
+    // 入力欄だと言える印。**カーソル `❯` は使えない** —— 実機 (v2.1.288) では
+    // 確認ダイアログの選択カーソルにも同じ記号が出る。通常プロンプトの
+    // フッターはダイアログの間だけ消えるので、これを印にする
+    readyPatterns: [/(?:auto|manual|plan|accept edits) mode on/i, /\? for shortcuts/i],
+    // 確認ダイアログの問い。**`Esc to cancel` は使ってはいけない** ——
+    // 断った後も判定の窓に残り、asking に貼り付いてテキストが届かなくなる
+    askingPatterns: [/Do you want to/i, /\(y\/n\)/i, /\[y\/n\]/i],
   },
   {
     id: "codex",

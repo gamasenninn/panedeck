@@ -10,7 +10,9 @@ import type { SessionStatus } from "../types/panedeck";
 
 export const STATUS = {
   RUNNING: "running", // 出力が流れている（処理中）
-  WAITING: "waiting", // ユーザーの入力を待っている（要操作）
+  WAITING: "waiting", // 入力待ち（ready と asking を見分けられないとき）
+  READY: "ready", // 入力欄で次の指示を待っている（打った文字は指示になる）
+  ASKING: "asking", // 質問で止まっている（打鍵がそのまま回答になる）
   IDLE: "idle", // シェルプロンプトなどで待機中（何も走っていない）
   EXITED: "exited", // プロセス終了
 } as const satisfies Record<string, SessionStatus>;
@@ -85,6 +87,15 @@ export interface DetectStatusParams {
    * 未指定なら既定を使う
    */
   waitingPatterns?: RegExp[];
+  /** 入力欄で待っていると分かる印（#27） */
+  readyPatterns?: RegExp[];
+  /**
+   * 質問で止まっていると分かる印（#27）。
+   *
+   * **これが与えられたときだけ分割が働く。** asking を見分けられないまま
+   * ready と言い切ると、確認ダイアログが「送ってよい」側に回るため。
+   */
+  askingPatterns?: RegExp[];
 }
 
 /**
@@ -93,8 +104,18 @@ export interface DetectStatusParams {
  * 判定の優先順位:
  *   1. 終了している            → exited
  *   2. 直近に出力が動いている  → running
- *   3. 入力待ちパターンに一致  → waiting
- *   4. それ以外                → idle
+ *   3. 質問の印に一致          → asking   （分割があるとき）
+ *   4. 入力欄の印に一致        → ready    （分割があるとき）
+ *   5. 入力待ちパターンに一致  → waiting  （分割の有無を問わず）
+ *   6. それ以外                → idle
+ *
+ * 分割があるときの waiting は「何かが待っているが、指示待ちか確認待ちか
+ * 見分けられない」を意味する。カーソルは入力欄にも選択式ダイアログにも出る
+ * ので、**入力欄だと言える印が無ければ ready とは言わない。** 知らない
+ * ダイアログが将来増えても、壊れ方が送らない側に倒れる。
+ *
+ * **asking は ready より先に見る。** 画面の書き換え途中やダイアログの上に
+ * 入力欄の枠が残っているときは両方が見えうるので、迷ったら送らない側へ倒す。
  */
 export function detectStatus({
   tail,
@@ -102,6 +123,8 @@ export function detectStatus({
   exited,
   quietMs = QUIET_MS,
   waitingPatterns,
+  readyPatterns,
+  askingPatterns,
 }: DetectStatusParams): SessionStatus {
   if (exited) return STATUS.EXITED;
   if (msSinceLastOutput < quietMs) return STATUS.RUNNING;
@@ -119,6 +142,20 @@ export function detectStatus({
     .filter((line) => line.trim() !== "")
     .slice(-TAIL_LINES)
     .join("\n");
+
+  const matches = (candidates?: RegExp[]) =>
+    Array.isArray(candidates) && candidates.some((pattern) => pattern.test(recent));
+
+  // 分割は asking の印があるときだけ。見分けられないまま ready と言い切ると、
+  // 確認ダイアログが「送ってよい」側に回る
+  if (Array.isArray(askingPatterns)) {
+    if (matches(askingPatterns)) return STATUS.ASKING;
+    if (matches(readyPatterns)) return STATUS.READY;
+    // どちらとも言えないが何かが待っている、という段。知らないダイアログは
+    // ここへ落ちる（ready 側へ落とすと「送ってよい」と誤って言うことになる）
+    if (matches(waitingPatterns)) return STATUS.WAITING;
+    return STATUS.IDLE;
+  }
 
   if (patterns.some((pattern) => pattern.test(recent))) {
     return STATUS.WAITING;

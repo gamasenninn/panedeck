@@ -514,7 +514,12 @@ test.describe("エージェントプロファイル", () => {
     expect(manager.get(codex.id)!.status).toBe(STATUS.IDLE);
   });
 
-  test("共通の確認プロンプトはどのエージェントでも入力待ちになる", () => {
+  /**
+   * 確認プロンプトはどのエージェントでも拾う。ただし #27 以降、見分けられる
+   * claude は asking まで言い切り、入力欄と選択肢が同じ `›` で出る codex は
+   * 分割できないので従来の waiting に留まる。
+   */
+  test("共通の確認プロンプトはどのエージェントでも拾う", () => {
     const { manager, ptyFactory, now } = setup();
     const claude = manager.create({ cwd: "a", agent: "claude" });
     const codex = manager.create({ cwd: "b", agent: "codex" });
@@ -523,7 +528,7 @@ test.describe("エージェントプロファイル", () => {
     ptyFactory.created[1].emitData("Continue? (y/n)");
     now.advance(QUIET_MS + 100);
 
-    expect(manager.get(claude.id)!.status).toBe(STATUS.WAITING);
+    expect(manager.get(claude.id)!.status).toBe(STATUS.ASKING);
     expect(manager.get(codex.id)!.status).toBe(STATUS.WAITING);
   });
 
@@ -697,5 +702,52 @@ test.describe("起動コマンド (initialCommand)", () => {
     manager.create({ cwd: "a", initialCommand: "   " });
 
     expect(ptyFactory.last()!.written).toEqual([]);
+  });
+});
+
+/**
+ * 状態の絞り込みは複数を受け取れる（#27）。
+ *
+ * テキストは「指示待ち」だけに送りたいが、Enter / ↑ / ↓ は「指示待ち」と
+ * 「確認待ち」の両方へ届かせたい。分割できないプロファイルの「入力待ち」も
+ * キー送信の対象には残す必要がある。
+ */
+test.describe("broadcast - 複数の状態で絞る", () => {
+  function deck() {
+    const { manager, ptyFactory, now } = setup();
+    const ready = manager.create({ cwd: "ready" });
+    const asking = manager.create({ cwd: "asking" });
+    const idle = manager.create({ cwd: "idle" });
+
+    // 出力を与えてから静止させ、状態を作る
+    ptyFactory.created[0].emitData("⏸ manual mode on · ? for shortcuts");
+    ptyFactory.created[1].emitData("Do you want to create note.txt?");
+    ptyFactory.created[2].emitData("Done.");
+    now.advance(QUIET_MS + 100);
+
+    return { manager, ptyFactory, ids: { ready: ready.id, asking: asking.id, idle: idle.id } };
+  }
+
+  test("状態を 1 つ渡すと従来どおり絞る", () => {
+    const { manager, ptyFactory } = deck();
+    expect(manager.broadcast("hi", null, { onlyStatus: STATUS.READY })).toBe(1);
+    expect(ptyFactory.created[0].written).toEqual(["hi"]);
+    expect(ptyFactory.created[1].written).toEqual([]);
+  });
+
+  test("配列で渡すとそのいずれかに当てはまるものへ送る", () => {
+    const { manager, ptyFactory } = deck();
+    expect(
+      manager.broadcast("\r", null, { onlyStatus: [STATUS.READY, STATUS.ASKING] })
+    ).toBe(2);
+    expect(ptyFactory.created[0].written).toEqual(["\r"]);
+    expect(ptyFactory.created[1].written).toEqual(["\r"]);
+    expect(ptyFactory.created[2].written).toEqual([]);
+  });
+
+  test("空配列はどこにも送らない（「絞らない」とは区別する）", () => {
+    const { manager, ptyFactory } = deck();
+    expect(manager.broadcast("hi", null, { onlyStatus: [] })).toBe(0);
+    expect(ptyFactory.created[0].written).toEqual([]);
   });
 });

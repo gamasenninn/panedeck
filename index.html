@@ -406,6 +406,19 @@
         color: #ffd33d;
       }
 
+      /* 指示待ち: 打った文字は指示になる。落ち着いた色で「送ってよい」を示す */
+      .pane-status[data-status="ready"] {
+        background: #0f5323;
+        color: #7ee787;
+      }
+
+      /* 確認待ち: 打鍵がそのまま回答になる。最も目立たせる */
+      .pane-status[data-status="asking"] {
+        background: #9e4c00;
+        color: #ffd33d;
+        font-weight: 600;
+      }
+
       .pane-status[data-status="idle"] {
         background: #21262d;
         color: #8b949e;

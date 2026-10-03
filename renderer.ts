@@ -8,7 +8,7 @@ import { shouldCopySelection } from "./renderer/clipboard.js";
 import { newlineSequenceFor } from "./renderer/keys.js";
 import {
   targetIds,
-  broadcastOptions,
+  textOptions,
   optionsForKey,
   isInterruptKey,
   noTargetMessage,
@@ -712,7 +712,8 @@ async function sendBroadcast() {
   const sent = await api.broadcast(
     `${text}\r`,
     targetIds(broadcastPanes()),
-    broadcastOptions(waitingOnly)
+    // テキストは指示待ちだけ。確認待ちへ送ると打った文字が回答になる（#27）
+    textOptions(waitingOnly)
   );
   if (sent === 0) {
     // 打ち直さずに済むよう入力は残す

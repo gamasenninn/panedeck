@@ -7,7 +7,18 @@
  */
 
 /** セッションの状態 */
-export type SessionStatus = "running" | "waiting" | "idle" | "exited";
+/**
+ * `waiting` は「入力待ち」をひとまとめにした従来の状態。見分けられる
+ * プロファイルでは `ready`（入力欄で待っている）と `asking`（質問で
+ * 止まっている）に分かれる。見分けられないものは `waiting` のまま（#27）。
+ */
+export type SessionStatus =
+  | "running"
+  | "waiting"
+  | "ready"
+  | "asking"
+  | "idle"
+  | "exited";
 
 /**
  * IPC で送れる形のセッション（pty 本体を含まないスナップショット）。
@@ -55,7 +66,16 @@ export interface AgentProfileSummary {
 
 /** 判定パターン込みのプロファイル（メインプロセス内でのみ使う） */
 export interface AgentProfile extends AgentProfileSummary {
+  /** 何かが待っていると分かる印。分割できないときはこれだけを使う */
   waitingPatterns: RegExp[];
+  /**
+   * 入力欄で待っていると分かる印（#27）。
+   * **カーソルだけでは足りない** —— 選択式ダイアログにも同じ記号が出るため、
+   * 「入力欄だと言える」印（通常プロンプトのフッターなど）を入れること
+   */
+  readyPatterns?: RegExp[];
+  /** 質問で止まっていると分かる印（#27）。これがあるときだけ分割が働く */
+  askingPatterns?: RegExp[];
 }
 
 /** node-pty のうち SessionManager が使う部分。テストのフェイクもこの形 */
@@ -141,7 +161,7 @@ export interface Settings {
 /** 一斉送信の絞り込み */
 export interface BroadcastOptions {
   /** この状態のセッションだけに送る */
-  onlyStatus?: SessionStatus;
+  onlyStatus?: SessionStatus | SessionStatus[];
 }
 
 /** ダイアログを伴う操作の結果 */

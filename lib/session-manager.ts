@@ -167,9 +167,15 @@ export class SessionManager {
    */
   broadcast(data: string, ids?: string[] | null, options?: BroadcastOptions): number {
     const { onlyStatus } = options ?? {};
+    // 複数を受け取れる。テキストは「指示待ち」だけ、キーは「指示待ち」と
+    // 「確認待ち」の両方、のように送るものによって対象が変わる（#27）
+    const allowed = onlyStatus === undefined ? null : [onlyStatus].flat();
     const targets = ids ?? [...this.sessions.keys()];
-    const filtered = onlyStatus
-      ? targets.filter((id) => this.get(id)?.status === onlyStatus)
+    const filtered = allowed
+      ? targets.filter((id) => {
+          const status = this.get(id)?.status;
+          return status !== undefined && allowed.includes(status);
+        })
       : targets;
 
     return filtered.reduce((count, id) => count + (this.write(id, data) ? 1 : 0), 0);
@@ -297,6 +303,8 @@ export class SessionManager {
         msSinceLastOutput: this.now() - session.lastOutputAt,
         exited: session.exited,
         waitingPatterns: session.profile.waitingPatterns,
+        readyPatterns: session.profile.readyPatterns,
+        askingPatterns: session.profile.askingPatterns,
       }),
     };
   }
