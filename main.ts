@@ -263,7 +263,11 @@ function startTriggers(): void {
           status: session.status,
         })),
     // 確定の CR はここで付ける。ひな型に改行を書かせない（#28 の信頼境界）
-    send: (id, text) => sessionManager.write(id, text + "\r"),
+    // **打つことと確定することは別の出来事。** 一度にまとめて書くと
+    // Claude Code は貼り付けと見て CR を改行にし、文面が入力欄に残る。
+    // 間隔と押し直しは TriggerWatcher が時計で決める
+    type: (id, text) => sessionManager.write(id, text),
+    submit: (id) => sessionManager.write(id, "\r"),
   });
 
   for (const trigger of settings.triggers) {

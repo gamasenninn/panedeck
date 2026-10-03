@@ -72,7 +72,9 @@ test("行が増えると指示待ちのペインへ届く", async () => {
 
   await expect
     .poll(() => writtenTo(electronApp, 0), { timeout: 10000 })
-    .toEqual(["新着 1 件 last=m1\r"]);
+    // **打つのと確定するのは別の書き込み。** 一度にまとめると貼り付けと
+    // 見なされ、CR が改行として入って実行されない（#28 の dogfood）
+    .toEqual(["新着 1 件 last=m1", "\r"]);
 });
 
 /** 打鍵が回答になる状態へ送ると、指示ではなくダイアログへの返事になる（#27） */
@@ -114,7 +116,7 @@ test("止まっている間に増えた行は、動けるようになってか�
 
   await expect
     .poll(() => writtenTo(electronApp, 0), { timeout: 10000 })
-    .toEqual(["新着 2 件 last=m2\r"]);
+    .toEqual(["新着 2 件 last=m2", "\r"]);
 });
 
 test("既にあった行は送りつけない", async () => {

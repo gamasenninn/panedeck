@@ -234,6 +234,16 @@ PaneDeck strips newlines and control characters from substituted values — one 
 
 **Substituting content somebody else wrote — a message body, say — lets that person type into your agent as you.** PaneDeck has no way to know which fields are safe. **Send identifiers and let the agent fetch the content through its own tools.**
 
+#### Typing and submitting are two events
+
+PaneDeck types the text, then presses Enter as a separate write a moment later, and only treats the lines as delivered once the pane has actually started working.
+
+Writing the text and the carriage return together does not work. Claude Code reads a burst of input as a paste and puts the trailing CR in as a **newline** — the message sits in the input box and nothing runs. Measured on a 91-character message: **0 of 4 deliveries ran when sent together, 4 of 4 when split**. A short message submits either way, so this depends on length.
+
+It never shows up in manual use, because a person types and then presses Enter as two separate acts. Only the trigger was doing it in one.
+
+If the pane has not moved a few seconds after Enter, PaneDeck presses it again, up to three times. If it still has not moved, **the lines go back to held** and the toolbar says so. They are never marked delivered on the strength of having been written — that was the original bug, and it consumed the line while leaving the message unsent in the input box.
+
 ### Keeping a command running (services)
 
 A trigger covers the case where something on this machine writes the file. When the source is remote, something local has to hold the connection and write what it receives — and that something, run inside an agent's pane, dies with the pane.
