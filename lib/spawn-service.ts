@@ -13,7 +13,7 @@
  * という形だけを受け取るので、lib/ の他は依存しないままでいられる。
  */
 
-import { spawn as spawnProcess } from "child_process";
+import { execFileSync, spawn as spawnProcess } from "child_process";
 
 import type { ServiceProcess } from "./service-runner";
 
@@ -51,11 +51,24 @@ export function spawnService(command: string): ServiceProcess {
 
     kill() {
       if (child.pid === undefined) return;
+
+      // 先にパイプを畳む。読み手が居なくなった後も開いたままだと、
+      // アプリの終了を妨げる
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+
       try {
         if (isWindows) {
-          // /T で子孫ごと、/F で強制。shell: true の先にいる孫はこれでないと残る
-          spawnProcess("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+          // /T で子孫ごと、/F で強制。shell: true の先にいる孫はこれでないと残る。
+          //
+          // **同期で待つ。** アプリ終了時に非同期で投げると、こちらが先に
+          // 消えて kill が実行されないまま終わる —— CI で実際にそうなり、
+          // 子が残ってアプリの終了そのものが返らなくなった。
+          // 終了処理なので待って構わないが、念のため上限は付ける
+          execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
             windowsHide: true,
+            timeout: 5_000,
+            stdio: "ignore",
           });
         } else {
           // マイナスの pid はプロセスグループ宛て
