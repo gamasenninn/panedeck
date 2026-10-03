@@ -22,6 +22,7 @@ const deck: DeckApi = {
 
   // エージェントプロファイル
   listAgents: () => ipcRenderer.invoke("agent:list"),
+  listTriggers: () => ipcRenderer.invoke("trigger:list"),
 
   // 高頻度の入力・リサイズは戻り値不要なので send/on
   input: (id, data) => ipcRenderer.send("session:input", { id, data }),

@@ -149,6 +149,16 @@ export interface TriggerConfig {
   send: string;
 }
 
+/** 画面に出すためのトリガーの様子（#28） */
+export interface TriggerState {
+  watch: string;
+  title: string;
+  /** まだ届けていない行数 */
+  held: number;
+  /** 届けられない理由。無ければ空 */
+  error: string;
+}
+
 export interface Settings {
   /** 端末の文字サイズ (px) */
   fontSize: number;
@@ -219,6 +229,8 @@ export interface DeckApi {
   pickDirectory(): Promise<string | null>;
 
   listAgents(): Promise<AgentProfileSummary[]>;
+  /** トリガーの様子。保留件数と、届けられない理由（#28） */
+  listTriggers(): Promise<TriggerState[]>;
 
   input(id: string, data: string): void;
   resize(id: string, cols: number, rows: number): void;

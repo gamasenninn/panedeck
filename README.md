@@ -197,6 +197,39 @@ With **restore on start** enabled, the layout is captured whenever sessions are 
 
 Restoring reproduces what was saved. The toolbar's launch command and agent are not mixed in, so a pane saved without a launch command comes back as a plain shell — it used to be filled in from the toolbar, which meant panes meant as shells started an agent instead.
 
+### Pane titles
+
+Double-click a pane's title to rename it. Enter or losing focus commits, Escape cancels, and an empty value restores the default. Titles are saved with the layout.
+
+The default title is the last segment of the working directory, so two panes in one directory doing different jobs are indistinguishable. Triggers address a pane by title, which is why they need to be separable.
+
+### Telling a pane that a file grew (triggers)
+
+A way for things outside PaneDeck — a message queue, a CI result, another agent — to say "something arrived for you". Configured in `settings.json`.
+
+```json
+"triggers": [{
+  "watch": "C:/Users/me/queue/project-a.jsonl",
+  "pane":  { "title": "project-a" },
+  "send":  "New items ({count}): last id={id}. Read them and act."
+}]
+```
+
+- **It never interprets the contents.** The file grew, a ready pane is told. That is all
+- **Delivery happens only to a `指示待ち` pane** — not to `確認待ち`, and not to the combined `入力待ち` either, since a profile that cannot tell them apart cannot promise the pane is not mid-dialog
+- Lines that arrive while the pane is busy are held and go out as **one message**. Ten lines do not interrupt ten times
+- `{count}` is the number of lines being delivered; any other `{name}` is a top-level field of the **last** line. A non-JSON line is available as `{line}`
+- How far each file has been delivered is persisted, so **lines that arrived while PaneDeck was closed are delivered, not skipped**
+- The pane shows that a trigger is attached and how many lines are held. An unreadable file, a missing pane, or two panes sharing one title are reported in the toolbar — **a trigger that silently does nothing is the failure this is meant to remove**
+
+#### What is sent counts as something you typed
+
+This is the trust boundary. Whatever `send` produces reaches the agent **exactly as if you had typed it into its input box**.
+
+PaneDeck strips newlines and control characters from substituted values — one carriage return would submit early and turn the rest into a second message. **It cannot do more than that.**
+
+**Substituting content somebody else wrote — a message body, say — lets that person type into your agent as you.** PaneDeck has no way to know which fields are safe. **Send identifiers and let the agent fetch the content through its own tools.**
+
 ## Project layout
 
 ```

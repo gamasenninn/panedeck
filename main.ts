@@ -13,6 +13,7 @@ import type {
 import { SessionManager } from "./lib/session-manager";
 import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace";
 import { listProfiles } from "./lib/agent-profiles";
+import { TriggerWatcher } from "./lib/trigger-watcher";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
 import { cleanupLogs } from "./lib/log-retention";
@@ -95,6 +96,19 @@ let logWriter: LogWriter | null = null;
 
 /** 溜まった出力を書き出す間隔 (ms) */
 const LOG_FLUSH_MS = 300;
+
+/**
+ * トリガーがファイルを見にいく間隔 (ms)（#28）。
+ *
+ * **fs.watch は使わない。** Windows では取りこぼしと二重発火があり、
+ * ネットワーク越しのファイルでは働かないこともある。ここで欲しいのは
+ * 「数百 ms 以内に気づく」であって「即座に」ではないので、画面の同期と
+ * 同じ周期で素直に見にいくほうが、取りこぼさないぶん確か。
+ */
+const TRIGGER_POLL_MS = 300;
+
+/** 設定にトリガーが無ければ null のまま */
+let triggerWatcher: TriggerWatcher | null = null;
 
 /**
  * 失敗を通知して、それ以上溜め込まないようにする。
@@ -210,6 +224,52 @@ sessionManager.onExit((id, exitCode) =>
   sendToRenderer("session:exit", { id, exitCode })
 );
 
+/**
+ * 設定のトリガーを起こす（#28）。
+ *
+ * 送るのは **指示待ちのペインだけ**。ペインは題で指す（作業ディレクトリは
+ * 複数のペインで重なりうる）。どこまで届けたかは設定に預けてあるので、
+ * 閉じている間に増えた行も次の起動で届く。
+ */
+function startTriggers(): void {
+  const settings = readSettings(settingsPath());
+  if (settings.triggers.length === 0) return;
+
+  triggerWatcher = new TriggerWatcher({
+    findPane: (title) =>
+      sessionManager
+        .list()
+        .filter((session) => session.title === title)
+        .map((session) => ({
+          id: session.id,
+          title: session.title,
+          status: session.status,
+        })),
+    // 確定の CR はここで付ける。ひな型に改行を書かせない（#28 の信頼境界）
+    send: (id, text) => sessionManager.write(id, text + "\r"),
+  });
+
+  for (const trigger of settings.triggers) {
+    triggerWatcher.add(trigger, settings.triggerCursors[trigger.watch]);
+  }
+
+  let saved = JSON.stringify(triggerWatcher.cursors());
+  setInterval(() => {
+    if (!triggerWatcher) return;
+    triggerWatcher.check();
+
+    // 進んだときだけ書く。毎周書くと設定ファイルを叩き続けることになる
+    const now = JSON.stringify(triggerWatcher.cursors());
+    if (now === saved) return;
+    saved = now;
+    try {
+      updateSettings(settingsPath(), { triggerCursors: JSON.parse(now) });
+    } catch {
+      // 控えが残らないだけ。配達そのものは続ける
+    }
+  }, TRIGGER_POLL_MS);
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -261,6 +321,8 @@ app.whenReady().then(() => {
   setInterval(() => {
     if (logWriter) reportLogFailures(logWriter.flush());
   }, LOG_FLUSH_MS);
+
+  startTriggers();
 });
 
 app.on("window-all-closed", () => {
@@ -310,6 +372,9 @@ ipcMain.handle("session:list", () => sessionManager.list());
 
 // 判定に使う正規表現は含まない（IPC に載らないため）。判定はメイン側で行う
 ipcMain.handle("agent:list", () => listProfiles());
+
+/** トリガーの様子（保留件数・届かない理由）。画面に出すためだけのもの（#28） */
+ipcMain.handle("trigger:list", () => triggerWatcher?.state() ?? []);
 
 ipcMain.handle("session:close", (_, id: string) => {
   if (logWriter) reportLogFailures(logWriter.close(id));

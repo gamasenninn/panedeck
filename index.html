@@ -400,6 +400,27 @@
         display: none;
       }
 
+      .pane-trigger {
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 10px;
+        white-space: nowrap;
+        flex-shrink: 0;
+        background: #21262d;
+        color: #8b949e;
+      }
+
+      /* 溜まっているときだけ目を引かせる。監視中は静かでよい */
+      .pane-trigger.held {
+        background: #0d419d;
+        color: #79c0ff;
+      }
+
+      .danger-text {
+        color: #ff7b72;
+        font-size: 12px;
+      }
+
       .pane-status {
         font-size: 11px;
         padding: 2px 8px;
@@ -545,6 +566,7 @@
         >● ログ記録中</span
       >
 
+      <span id="trigger-error" data-testid="trigger-error" class="danger-text" hidden></span>
       <span id="message" data-testid="message"></span>
       <span id="session-count" data-testid="session-count">0 セッション</span>
       <button id="close-all" class="danger" data-testid="close-all">全終了</button>

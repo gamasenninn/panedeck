@@ -2,7 +2,12 @@
 // バンドラは挟まないので、相対 import には拡張子 .js を書くこと。
 // xterm は npm の bare import が解決できないため、script タグで読み込んだ
 // グローバル（Terminal / FitAddon）をそのまま使う。
-import type { Session, SessionStatus, Settings } from "./types/panedeck";
+import type {
+  Session,
+  SessionStatus,
+  Settings,
+  TriggerState,
+} from "./types/panedeck";
 import { STATUS_LABELS, KEY_SEQUENCES } from "./renderer/constants.js";
 import { shouldCopySelection } from "./renderer/clipboard.js";
 import { newlineSequenceFor } from "./renderer/keys.js";
@@ -32,6 +37,7 @@ interface Pane {
   term: InstanceType<typeof Terminal>;
   fitAddon: InstanceType<(typeof FitAddon)["FitAddon"]>;
   statusEl: HTMLElement;
+  triggerEl: HTMLElement;
   titleEl: HTMLElement;
   selectEl: HTMLInputElement;
   maximizeEl: HTMLElement;
@@ -65,6 +71,7 @@ const logMaxTotalMbEl = document.getElementById(
 ) as HTMLInputElement;
 const autoLogIndicatorEl = document.getElementById("auto-log-indicator")!;
 const settingsBackdropEl = document.getElementById("settings-backdrop")!;
+const triggerErrorEl = document.getElementById("trigger-error")!;
 
 /** セッション id → ペイン */
 const panes = new Map<string, Pane>();
@@ -134,6 +141,7 @@ async function createPane(session: Session): Promise<Pane> {
       />
       <span class="pane-cwd" data-testid="pane-cwd"></span>
       <span class="pane-command" data-testid="pane-command"></span>
+      <span class="pane-trigger" data-testid="pane-trigger" hidden></span>
       <span class="pane-status" data-testid="pane-status"></span>
       <button class="pane-maximize" data-testid="pane-maximize">拡大</button>
       <button class="pane-savelog" data-testid="pane-savelog">ログ</button>
@@ -147,6 +155,7 @@ async function createPane(session: Session): Promise<Pane> {
   const cwdEl = el.querySelector(".pane-cwd") as HTMLElement;
   const commandEl = el.querySelector(".pane-command") as HTMLElement;
   const statusEl = el.querySelector(".pane-status") as HTMLElement;
+  const triggerEl = el.querySelector(".pane-trigger") as HTMLElement;
   const selectEl = el.querySelector(".pane-select") as HTMLInputElement;
   const maximizeEl = el.querySelector(".pane-maximize") as HTMLElement;
   const body = el.querySelector(".pane-body") as HTMLElement;
@@ -182,6 +191,7 @@ async function createPane(session: Session): Promise<Pane> {
     term,
     fitAddon,
     statusEl,
+    triggerEl,
     titleEl,
     selectEl,
     maximizeEl,
@@ -535,6 +545,27 @@ function setFocused(id: string) {
  * ペイン生成をこの一箇所に集約することで、UI からの追加でも
  * ワークスペース復元でも同じ経路でペインが並ぶ。
  */
+/**
+ * トリガーの様子をペインと画面に出す（#28）。
+ *
+ * **黙って何もしないトリガーこそ、この機能が取り除きたい失敗。** 届け先が
+ * 無い・ファイルが読めないは、送れていないと分かるところに出す。
+ */
+function applyTriggers(states: TriggerState[]) {
+  for (const pane of panes.values()) {
+    const mine = states.filter((state) => state.title === pane.titleEl.textContent);
+    const held = mine.reduce((sum, state) => sum + state.held, 0);
+
+    pane.triggerEl.hidden = mine.length === 0;
+    pane.triggerEl.textContent = held > 0 ? `保留 ${held}` : "監視中";
+    pane.triggerEl.classList.toggle("held", held > 0);
+  }
+
+  const errors = states.filter((state) => state.error !== "");
+  triggerErrorEl.textContent = errors.map((state) => state.error).join(" / ");
+  triggerErrorEl.hidden = errors.length === 0;
+}
+
 async function sync() {
   const sessions = await api.listSessions();
   const alive = new Set(sessions.map((s) => s.id));
@@ -570,6 +601,7 @@ async function sync() {
   grid.classList.toggle("empty", count === 0);
   emptyState.style.display = count === 0 ? "" : "none";
   updateBroadcastTarget();
+  applyTriggers(await api.listTriggers());
 }
 
 /**
