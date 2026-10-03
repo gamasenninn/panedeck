@@ -57,6 +57,14 @@ interface Entry {
   config: TriggerConfig;
   /** どこまで読んだか（バイトではなく文字数） */
   cursor: number;
+  /**
+   * どこまで読んだか。**カーソルとは別に持つ。**
+   *
+   * カーソルは「届けた位置」で、保留したまま閉じた行を次の起動で拾い直せる
+   * ようにするためのもの。読んだ時点で進めると、保留はメモリにしか無いので
+   * そのまま消える。
+   */
+  readTo: number;
   held: string[];
   error: string;
 }
@@ -94,6 +102,7 @@ export class TriggerWatcher {
     this.entries.push({
       config,
       cursor: cursor ?? (size ?? 0),
+      readTo: cursor ?? (size ?? 0),
       held: [],
       error: "",
     });
@@ -137,10 +146,13 @@ export class TriggerWatcher {
 
     // 短くなっていたら別のファイルに入れ替わったとみなし、先頭から読み直す。
     // 進んだままにすると、以後の行を永久に取りこぼす
-    if (text.length < entry.cursor) entry.cursor = 0;
+    if (text.length < entry.readTo) {
+      entry.readTo = 0;
+      entry.cursor = 0;
+    }
 
-    const added = text.slice(entry.cursor);
-    entry.cursor = text.length;
+    const added = text.slice(entry.readTo);
+    entry.readTo = text.length;
     if (added === "") return;
 
     for (const line of added.split(/\r?\n/)) {
@@ -170,6 +182,8 @@ export class TriggerWatcher {
 
     const text = renderTemplate(entry.config.send, templateValues(entry.held));
     entry.held = [];
+    // 届いた時点で初めてカーソルを進める。保留のまま閉じても次の起動で拾える
+    entry.cursor = entry.readTo;
     this.sendTo(pane.id, text);
   }
 }

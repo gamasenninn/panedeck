@@ -49,16 +49,29 @@ lines.forEach((line, i) => console.log(`${String(i).padStart(2)}| ${visible(line
 
 console.log("=== プロファイルごとの判定 ===");
 for (const profile of AGENT_PROFILES) {
+  // 分割（ready / asking）も渡すこと。渡さないと常に waiting に見え、
+  // 「直したのに直っていない」と誤読する（実際にそれで時間を溶かした）
   const status = detectStatus({
     tail,
     msSinceLastOutput: 9999,
     exited: false,
     waitingPatterns: profile.waitingPatterns,
+    readyPatterns: profile.readyPatterns,
+    askingPatterns: profile.askingPatterns,
   });
-  const hit = profile.waitingPatterns.filter((p) => p.test(lines.join("\n")));
-  console.log(
-    `  ${profile.id.padEnd(8)} ${status.padEnd(8)} ${hit.map(String).join(" ") || "(一致なし)"}`
-  );
+
+  const text = lines.join("\n");
+  const hit = [
+    ["asking", profile.askingPatterns],
+    ["ready", profile.readyPatterns],
+    ["waiting", profile.waitingPatterns],
+  ]
+    .flatMap(([name, patterns]) =>
+      (patterns ?? []).filter((p) => p.test(text)).map((p) => `${name}:${p}`)
+    )
+    .join(" ");
+
+  console.log(`  ${profile.id.padEnd(8)} ${status.padEnd(8)} ${hit || "(一致なし)"}`);
 }
 
 console.log("=== 判定行に出てくる ASCII 外の記号 ===");

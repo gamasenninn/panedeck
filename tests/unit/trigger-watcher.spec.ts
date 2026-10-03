@@ -196,3 +196,57 @@ test.describe("カーソル", () => {
     expect(sent).toEqual([{ title: "s1", text: "1" }]);
   });
 });
+
+/**
+ * カーソルは「読んだ位置」ではなく「**届けた位置**」（#28 の dogfood で気づいた）。
+ *
+ * 読んだ時点で進めると、保留したまま閉じた行が次の起動で飛ばされる。
+ * 保留はメモリにしか無いので、記録にも残らず消える。
+ */
+test.describe("保留中のカーソル", () => {
+  test("届けるまでカーソルは進まない", () => {
+    const file = tempFile("");
+    const { watcher, setStatus } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    setStatus("running");
+    fs.appendFileSync(file, "one\ntwo\n");
+    watcher.check();
+
+    expect(watcher.state()[0].held).toBe(2);
+    expect(watcher.cursors()[file]).toBe(0);
+  });
+
+  test("届けた時点で進む", () => {
+    const file = tempFile("");
+    const { watcher, setStatus } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    setStatus("running");
+    fs.appendFileSync(file, "one\ntwo\n");
+    watcher.check();
+
+    setStatus("ready");
+    watcher.check();
+    expect(watcher.cursors()[file]).toBe(8);
+  });
+
+  /** 閉じて開き直しても、保留していた行は消えずに届く */
+  test("保留したまま閉じても、次の起動で届く", () => {
+    const file = tempFile("");
+    const first = setup();
+    first.watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    first.setStatus("running");
+    fs.appendFileSync(file, "one\ntwo\n");
+    first.watcher.check();
+    const saved = first.watcher.cursors()[file];
+
+    // 預けたカーソルで開き直す
+    const second = setup();
+    second.watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" }, saved);
+    second.watcher.check();
+
+    expect(second.sent).toEqual([{ title: "s1", text: "2" }]);
+  });
+});

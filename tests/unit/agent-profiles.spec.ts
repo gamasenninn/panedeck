@@ -226,3 +226,59 @@ test.describe("codex は見分けられないので waiting のまま", () => {
     expect(status(trust)).toBe(STATUS.WAITING);
   });
 });
+
+/**
+ * パターンに制御文字を埋めない（#28 の dogfood で踏んだ）。
+ *
+ * `\b` のつもりで**バックスペース文字 (U+0008) が入った**ことがある。ソース上は
+ * 空白と区別がつかず、目でも grep でも気づけない。パターンは一致しなくなるが、
+ * 別のパターンがたまたま当たっていたため**テストは緑のまま**だった。
+ *
+ * CLAUDE.md が「制御文字は必ず escape で書く」と書いているのはこの事故のこと。
+ * 人の目に頼るのをやめて、ここで機械的に止める。
+ */
+test.describe("パターンに制御文字が混ざっていない", () => {
+  const CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/;
+
+  for (const profile of AGENT_PROFILES) {
+    test(`${profile.id} のパターンは全て制御文字を含まない`, () => {
+      const groups = [
+        ["waiting", profile.waitingPatterns],
+        ["ready", profile.readyPatterns],
+        ["asking", profile.askingPatterns],
+      ] as const;
+
+      for (const [name, patterns] of groups) {
+        for (const pattern of patterns ?? []) {
+          expect(
+            CONTROL.test(pattern.source),
+            `${profile.id} の ${name} に制御文字: ${JSON.stringify(pattern.source)}`
+          ).toBe(false);
+        }
+      }
+    });
+  }
+});
+
+/**
+ * 実機の素の `claude` が出すフッター（#28 の dogfood で採取）。
+ *
+ * **書き写さず、採取したログからそのまま取り出した 1 行。** 手で打ち直すと
+ * 空白や記号が無意識に均されて、通るはずのないものが通る。
+ */
+test.describe("素の claude の入力欄", () => {
+  const REAL_FOOTER = "  ⏵⏵ auto mode on (shift+tab to cycle)";
+
+  test("フッターがあれば ready", () => {
+    const claude = resolveProfile("claude");
+    expect(
+      detectStatus({
+        tail: `❯\n${REAL_FOOTER}`,
+        msSinceLastOutput: QUIET_MS + 100,
+        waitingPatterns: claude.waitingPatterns,
+        readyPatterns: claude.readyPatterns,
+        askingPatterns: claude.askingPatterns,
+      })
+    ).toBe(STATUS.READY);
+  });
+});

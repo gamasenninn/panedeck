@@ -63,7 +63,7 @@ export const AGENT_PROFILES: AgentProfile[] = [
     // 入力欄だと言える印。**カーソル `❯` は使えない** —— 実機 (v2.1.288) では
     // 確認ダイアログの選択カーソルにも同じ記号が出る。通常プロンプトの
     // フッターはダイアログの間だけ消えるので、これを印にする
-    readyPatterns: [/(?:auto|manual|plan|accept edits) mode on/i, /\? for shortcuts/i],
+    readyPatterns: [/(?:auto|manual|plan|accept edits) mode on/i, /\? for shortcuts/i],
     // 確認ダイアログの問い。**`Esc to cancel` は使ってはいけない** ——
     // 断った後も判定の窓に残り、asking に貼り付いてテキストが届かなくなる
     askingPatterns: [/Do you want to/i, /\(y\/n\)/i, /\[y\/n\]/i],
