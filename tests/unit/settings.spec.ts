@@ -74,6 +74,8 @@ test.describe("normalizeSettings", () => {
       "logMaxTotalMB",
       "logRetentionDays",
       "logStripAnsi",
+      "triggerCursors",
+      "triggers",
     ]);
   });
 });
@@ -346,5 +348,65 @@ test.describe("updateSettings（部分更新）", () => {
       fontSize: 18,
       autoRestore: false,
     });
+  });
+});
+
+/**
+ * トリガーの設定（#28）。
+ *
+ * 壊れた項目でアプリが起動できなくなるのは避ける。**読めないものは落として
+ * 残りを活かす** —— 設定ファイルは手で書かれる前提なので、1 つの打ち間違いで
+ * 全部が死ぬのは割に合わない。
+ */
+test.describe("triggers", () => {
+  test("既定は空", () => {
+    expect(normalizeSettings({}).triggers).toEqual([]);
+  });
+
+  test("必要な項目が揃ったものだけ残す", () => {
+    const triggers = normalizeSettings({
+      triggers: [
+        { watch: "a.jsonl", pane: { title: "A" }, send: "来ました" },
+        { watch: "b.jsonl", pane: { title: "B" } }, // send が無い
+        { pane: { title: "C" }, send: "x" }, // watch が無い
+        { watch: "d.jsonl", send: "x" }, // pane が無い
+        "文字列", // そもそも形が違う
+      ],
+    }).triggers;
+
+    expect(triggers).toEqual([
+      { watch: "a.jsonl", pane: { title: "A" }, send: "来ました" },
+    ]);
+  });
+
+  test("配列でなければ空にする", () => {
+    expect(normalizeSettings({ triggers: "x" }).triggers).toEqual([]);
+    expect(normalizeSettings({ triggers: null }).triggers).toEqual([]);
+  });
+
+  test("余計な項目は持ち込まない", () => {
+    const triggers = normalizeSettings({
+      triggers: [{ watch: "a", pane: { title: "A", cwd: "x" }, send: "s", extra: 1 }],
+    }).triggers;
+
+    expect(triggers[0]).toEqual({ watch: "a", pane: { title: "A" }, send: "s" });
+  });
+});
+
+/**
+ * カーソルは設定と同じ場所に預ける（#28）。
+ *
+ * 閉じている間に増えた行を、次の起動で飛ばさないため。
+ */
+test.describe("triggerCursors", () => {
+  test("既定は空", () => {
+    expect(normalizeSettings({}).triggerCursors).toEqual({});
+  });
+
+  test("数値だけを残す", () => {
+    expect(
+      normalizeSettings({ triggerCursors: { "a.jsonl": 120, "b.jsonl": "x", "c.jsonl": -5 } })
+        .triggerCursors
+    ).toEqual({ "a.jsonl": 120 });
   });
 });

@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-import type { Settings } from "../types/panedeck";
+import type { Settings, TriggerConfig } from "../types/panedeck";
 
 /**
  * アプリ設定の読み書き。
@@ -43,7 +43,36 @@ export const DEFAULT_SETTINGS: Settings = {
   logRetentionDays: 30,
   // 合計サイズの上限 (MB)。0 ならサイズでは消さない
   logMaxTotalMB: 500,
+
+  // ファイル監視のトリガー（#28）。既定は無し
+  triggers: [],
+  // どこまで届けたか。閉じている間に増えた行を次の起動で飛ばさないため
+  triggerCursors: {},
 };
+
+/**
+ * トリガー 1 件を、使える形だけに整える。読めなければ null。
+ *
+ * **読めないものは落として残りを活かす。** 設定は手で書かれる前提なので、
+ * 1 つの打ち間違いで全部が死ぬのは割に合わない。
+ */
+function normalizeTrigger(raw: unknown): TriggerConfig | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const source = raw as Record<string, unknown>;
+
+  const watch = typeof source.watch === "string" ? source.watch.trim() : "";
+  const send = typeof source.send === "string" ? source.send : "";
+  const pane = source.pane as Record<string, unknown> | undefined;
+  const title =
+    pane && typeof pane === "object" && typeof pane.title === "string"
+      ? pane.title.trim()
+      : "";
+
+  if (watch === "" || send === "" || title === "") return null;
+
+  // 余計な項目は持ち込まない
+  return { watch, pane: { title }, send };
+}
 
 /**
  * 数値として読める値を範囲内へ収める。読めなければ既定を返す。
@@ -79,6 +108,18 @@ function bool(value: unknown, fallback: boolean): boolean {
  * 未知のフィールドは持ち込まない。設定ファイルは手で編集されうるので、
  * 読み込んだものをそのまま流さない。
  */
+/** カーソルは 0 以上の数値だけを残す（負の値や文字列は読まなかったことにする） */
+function normalizeCursors(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, number> = {};
+  for (const [file, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+      out[file] = value;
+    }
+  }
+  return out;
+}
+
 export function normalizeSettings(raw: unknown): Settings {
   const source: Record<string, unknown> =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -105,6 +146,14 @@ export function normalizeSettings(raw: unknown): Settings {
       0,
       Number.MAX_SAFE_INTEGER
     ),
+    triggers: Array.isArray(source.triggers)
+      ? source.triggers
+          .map(normalizeTrigger)
+          .filter((t): t is TriggerConfig => t !== null)
+      : DEFAULT_SETTINGS.triggers,
+
+    triggerCursors: normalizeCursors(source.triggerCursors),
+
     logMaxTotalMB: clampNumber(
       source.logMaxTotalMB,
       DEFAULT_SETTINGS.logMaxTotalMB,

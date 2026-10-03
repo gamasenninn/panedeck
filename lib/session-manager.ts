@@ -15,6 +15,9 @@ export { STATUS };
 /** ログとして保持する最大文字数（超えたら先頭から捨てる） */
 export const DEFAULT_MAX_LOG_BYTES = 500000;
 
+/** 題に混ぜてはいけない文字。改行が入ると表示も宛先の一致判定も壊れる */
+const CONTROL_CHARS = /[\x00-\x1f\x7f]+/g;
+
 /** 状態判定に渡す末尾の文字数 */
 const TAIL_CHARS = 2000;
 
@@ -135,6 +138,29 @@ export class SessionManager {
     if (command) pty.write(`${command}\r`);
 
     return this._snapshot(session);
+  }
+
+  /**
+   * ペインの題を付け替える（#28）。
+   *
+   * トリガーの送り先は題で指すが、既定の題は作業ディレクトリの末尾なので、
+   * 同じディレクトリで役割の違う 2 枚を開くと衝突する。
+   *
+   * 題は 1 行であること。改行が混ざると表示も宛先の一致判定も壊れるので均す。
+   * 空にしたら作業ディレクトリ由来の既定へ戻す（題なしでは指せない）。
+   * **終了済みでも変えられる** — 題は表示と宛先のためのもので、pty を触らない。
+   */
+  rename(id: string, title: string): boolean {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+
+    const cleaned = String(title ?? "")
+      .replace(CONTROL_CHARS, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    session.title = cleaned === "" ? defaultTitle(session.cwd) : cleaned;
+    return true;
   }
 
   get(id: string): Session | null {

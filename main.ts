@@ -331,6 +331,18 @@ ipcMain.handle("session:reorder", (_, ids: string[]) => {
   return ordered;
 });
 
+/**
+ * ペインの題を付け替える（#28）。
+ *
+ * 題はトリガーの送り先を指すのに使う。構成にも保存されるので、
+ * 付け替えたら控えを取り直す。
+ */
+ipcMain.handle("session:rename", (_, { id, title }: { id: string; title: string }) => {
+  const renamed = sessionManager.rename(id, title);
+  if (renamed) persistSessions();
+  return renamed;
+});
+
 ipcMain.handle("session:broadcast", (_, { data, ids, options }) =>
   sessionManager.broadcast(data, ids, options)
 );

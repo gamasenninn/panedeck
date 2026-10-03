@@ -139,6 +139,16 @@ export interface Workspace {
 /**
  * アプリ設定。ワークスペース（どこで開くか）とは別で、押さなくても次回に残るもの。
  */
+/** ファイルが伸びたら指示待ちのペインへ伝える設定（#28） */
+export interface TriggerConfig {
+  /** 監視するファイル */
+  watch: string;
+  /** 送り先。題で指す（作業ディレクトリは複数のペインで重なりうる） */
+  pane: { title: string };
+  /** 送る文面のひな型。`{count}` と最後の行の最上位フィールドが使える */
+  send: string;
+}
+
 export interface Settings {
   /** 端末の文字サイズ (px) */
   fontSize: number;
@@ -156,6 +166,10 @@ export interface Settings {
   logRetentionDays: number;
   /** ログの合計サイズ上限 (MB)。0 ならサイズでは消さない */
   logMaxTotalMB: number;
+  /** ファイル監視のトリガー（#28） */
+  triggers: TriggerConfig[];
+  /** 監視ファイルごとに、どこまで届けたか。再起動で飛ばさないため */
+  triggerCursors: Record<string, number>;
 }
 
 /** 一斉送信の絞り込み */
@@ -195,6 +209,8 @@ export interface DeckApi {
   closeSession(id: string): Promise<boolean>;
   closeAllSessions(): Promise<number>;
   reorderSessions(ids: string[]): Promise<string[]>;
+  /** ペインの題を付け替える。空にすると作業ディレクトリ由来の既定へ戻る（#28） */
+  renameSession(id: string, title: string): Promise<boolean>;
   broadcast(
     data: string,
     ids?: string[] | null,

@@ -751,3 +751,59 @@ test.describe("broadcast - 複数の状態で絞る", () => {
     expect(ptyFactory.created[0].written).toEqual([]);
   });
 });
+
+/**
+ * ペインに自分の題を付ける（#28）。
+ *
+ * トリガーの送り先は題で指す。既定の題は作業ディレクトリの末尾なので、
+ * **同じディレクトリで役割の違う 2 枚**を開くと衝突する。付け替えられないと
+ * 送り先を一意に指せない。
+ */
+test.describe("rename", () => {
+  test("題を付け替える", () => {
+    const { manager } = setup();
+    const a = manager.create({ cwd: "/work/repo-a" });
+    expect(manager.get(a.id)!.title).toBe("repo-a");
+
+    expect(manager.rename(a.id, "レビュー係")).toBe(true);
+    expect(manager.get(a.id)!.title).toBe("レビュー係");
+  });
+
+  test("存在しない id なら false", () => {
+    const { manager } = setup();
+    expect(manager.rename("nope", "x")).toBe(false);
+  });
+
+  /** 題が無いペインは送り先として指せない。既定へ戻す */
+  test("空にしたら作業ディレクトリ由来の既定へ戻す", () => {
+    const { manager } = setup();
+    const a = manager.create({ cwd: "/work/repo-a", title: "いったん別名" });
+
+    expect(manager.rename(a.id, "   ")).toBe(true);
+    expect(manager.get(a.id)!.title).toBe("repo-a");
+  });
+
+  test("前後の空白は落とす", () => {
+    const { manager } = setup();
+    const a = manager.create({ cwd: "a" });
+    manager.rename(a.id, "  係  ");
+    expect(manager.get(a.id)!.title).toBe("係");
+  });
+
+  /** 題は 1 行でなければならない。改行が入ると表示も一致判定も壊れる */
+  test("改行や制御文字は空白に均す", () => {
+    const { manager } = setup();
+    const a = manager.create({ cwd: "a" });
+    manager.rename(a.id, "前\n後");
+    expect(manager.get(a.id)!.title).toBe("前 後");
+  });
+
+  test("終了済みのセッションでも題は変えられる", () => {
+    const { manager, ptyFactory } = setup();
+    const a = manager.create({ cwd: "a" });
+    ptyFactory.last()!.emitExit(0);
+
+    expect(manager.rename(a.id, "終わった係")).toBe(true);
+    expect(manager.get(a.id)!.title).toBe("終わった係");
+  });
+});

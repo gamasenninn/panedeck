@@ -127,6 +127,11 @@ async function createPane(session: Session): Promise<Pane> {
     <div class="pane-header">
       <input type="checkbox" class="pane-select" data-testid="pane-select" />
       <span class="pane-title" data-testid="pane-title"></span>
+      <input
+        class="pane-title-input"
+        data-testid="pane-title-input"
+        hidden
+      />
       <span class="pane-cwd" data-testid="pane-cwd"></span>
       <span class="pane-command" data-testid="pane-command"></span>
       <span class="pane-status" data-testid="pane-status"></span>
@@ -138,6 +143,7 @@ async function createPane(session: Session): Promise<Pane> {
   `;
 
   const titleEl = el.querySelector(".pane-title") as HTMLElement;
+  const titleInputEl = el.querySelector(".pane-title-input") as HTMLInputElement;
   const cwdEl = el.querySelector(".pane-cwd") as HTMLElement;
   const commandEl = el.querySelector(".pane-command") as HTMLElement;
   const statusEl = el.querySelector(".pane-status") as HTMLElement;
@@ -212,6 +218,8 @@ async function createPane(session: Session): Promise<Pane> {
 
     return true;
   });
+
+  setupTitleEditing(session.id, titleEl, titleInputEl);
 
   el.addEventListener("mousedown", () => setFocused(session.id));
   selectEl.addEventListener("change", updateBroadcastTarget);
@@ -451,6 +459,64 @@ function fit(pane: Pane) {
   } catch {
     // レイアウト確定前は測れないことがあるので無視する
   }
+}
+
+/**
+ * 題を二度押しで書き換えられるようにする（#28）。
+ *
+ * トリガーの送り先は題で指すので、既定（作業ディレクトリの末尾）のままだと
+ * 同じディレクトリの 2 枚を区別できない。
+ *
+ * ヘッダはすでに窮屈なのでボタンは足さず、二度押しで入れ替える。確定は
+ * Enter と焦点外れ、取り消しは Escape。**window.prompt は使わない** ——
+ * ネイティブのモーダルは E2E も実操作も止める。
+ */
+function setupTitleEditing(
+  id: string,
+  titleEl: HTMLElement,
+  inputEl: HTMLInputElement
+) {
+  const open = () => {
+    inputEl.value = titleEl.textContent ?? "";
+    inputEl.hidden = false;
+    titleEl.hidden = true;
+    inputEl.focus();
+    inputEl.select();
+  };
+
+  const close = () => {
+    inputEl.hidden = true;
+    titleEl.hidden = false;
+  };
+
+  const commit = async () => {
+    if (inputEl.hidden) return;
+    const next = inputEl.value;
+    close();
+    await api.renameSession(id, next);
+    // 表示は同期の突き合わせに任せる。ここで書くと真実が 2 箇所になる
+    await sync();
+  };
+
+  titleEl.addEventListener("dblclick", (event) => {
+    event.stopPropagation();
+    open();
+  });
+
+  inputEl.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void commit();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    }
+  });
+
+  // 焦点が外れたら確定。開いたまま迷子にしない
+  inputEl.addEventListener("blur", () => void commit());
+  inputEl.addEventListener("mousedown", (event) => event.stopPropagation());
 }
 
 function setFocused(id: string) {

@@ -15,6 +15,7 @@ const deck: DeckApi = {
   closeSession: (id) => ipcRenderer.invoke("session:close", id),
   closeAllSessions: () => ipcRenderer.invoke("session:closeAll"),
   reorderSessions: (ids) => ipcRenderer.invoke("session:reorder", ids),
+  renameSession: (id, title) => ipcRenderer.invoke("session:rename", { id, title }),
   broadcast: (data, ids, options) =>
     ipcRenderer.invoke("session:broadcast", { data, ids, options }),
   pickDirectory: () => ipcRenderer.invoke("session:pickDirectory"),
