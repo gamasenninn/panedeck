@@ -807,3 +807,107 @@ test.describe("rename", () => {
     expect(manager.get(a.id)!.title).toBe("終わった係");
   });
 });
+
+/**
+ * 判定は「記録の末尾」ではなく「画面」を見る（#31）。
+ *
+ * pty が吐いたバイト列は**塗られたものすべての記録**で、全画面 TUI は変えた
+ * 領域だけを塗り直す。記録の末尾は「最後に塗られた場所」であって画面ではない。
+ * 実測では、画面に出ている入力欄の印が窓の 8 倍以上手前にあった。
+ *
+ * 画面の組み立ては端末エミュレータの仕事なので、`screenFactory` として外から
+ * 注入する。lib/ は端末エミュレータを知らないままでいられる。
+ */
+test.describe("画面から判定する", () => {
+  /** 最後に書かれた 1 回ぶんだけを「画面」とみなす、ごく単純なフェイク */
+  function fakeScreenFactory() {
+    const screens: Array<{
+      text: string;
+      cols: number;
+      rows: number;
+      disposed: boolean;
+      read(): string;
+    }> = [];
+    const factory = () => {
+      const screen = {
+        text: "",
+        cols: 80,
+        rows: 24,
+        disposed: false,
+        write(data: string) {
+          // 画面は「いま見えているもの」。塗り直しは前の内容を置き換える
+          screen.text = data;
+        },
+        resize(cols: number, rows: number) {
+          screen.cols = cols;
+          screen.rows = rows;
+        },
+        read: () => screen.text,
+        dispose() {
+          screen.disposed = true;
+        },
+      };
+      screens.push(screen);
+      return screen;
+    };
+    factory.screens = screens;
+    return factory;
+  }
+
+  function setupWithScreen() {
+    const ptyFactory = createFakePtyFactory();
+    const now = createFakeClock();
+    const screenFactory = fakeScreenFactory();
+    const manager = new SessionManager({ ptyFactory, now, screenFactory });
+    return { manager, ptyFactory, now, screenFactory };
+  }
+
+  test("記録の末尾ではなく画面の内容で判定する", () => {
+    const { manager, ptyFactory, now } = setupWithScreen();
+    const a = manager.create({ cwd: "a", agent: "claude" });
+
+    // 画面を一度埋めてから、入力欄だけを塗り直す。記録の末尾には
+    // 入力欄の印しか残らないが、画面としてはそれが正しい
+    ptyFactory.last()!.emitData("…長い作業の出力…");
+    ptyFactory.last()!.emitData("❯\n⏸ manual mode on · ? for shortcuts");
+    now.advance(QUIET_MS + 100);
+
+    expect(manager.get(a.id)!.status).toBe(STATUS.READY);
+  });
+
+  /** 画面を持たない呼び出し（既存のテストや古い経路）は従来どおり */
+  test("screenFactory を渡さなければ記録の末尾を見る", () => {
+    const { manager, ptyFactory, now } = setup();
+    const a = manager.create({ cwd: "a", agent: "claude" });
+    ptyFactory.last()!.emitData("❯\n⏸ manual mode on · ? for shortcuts");
+    now.advance(QUIET_MS + 100);
+
+    expect(manager.get(a.id)!.status).toBe(STATUS.READY);
+  });
+
+  test("画面には pty の出力がそのまま流れる", () => {
+    const { manager, ptyFactory, screenFactory } = setupWithScreen();
+    manager.create({ cwd: "a" });
+    ptyFactory.last()!.emitData("hello");
+
+    expect(screenFactory.screens[0].read()).toBe("hello");
+  });
+
+  test("リサイズは画面にも伝わる（折り返しが変わるため）", () => {
+    const { manager, screenFactory } = setupWithScreen();
+    const a = manager.create({ cwd: "a", cols: 80, rows: 24 });
+    manager.resize(a.id, 100, 30);
+
+    expect(screenFactory.screens[0].cols).toBe(100);
+    expect(screenFactory.screens[0].rows).toBe(30);
+  });
+
+  /** 画面は 1 セッションにつき 1 つ。閉じたら手放す（行数ぶんの記憶を抱える） */
+  test("セッションを閉じたら画面も捨てる", () => {
+    const { manager, screenFactory } = setupWithScreen();
+    const a = manager.create({ cwd: "a" });
+    manager.close(a.id);
+
+    expect(screenFactory.screens[0].disposed).toBe(true);
+  });
+});

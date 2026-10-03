@@ -14,6 +14,7 @@ import { SessionManager } from "./lib/session-manager";
 import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace";
 import { listProfiles } from "./lib/agent-profiles";
 import { TriggerWatcher } from "./lib/trigger-watcher";
+import { createScreen } from "./lib/screen";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
 import { cleanupLogs } from "./lib/log-retention";
@@ -204,7 +205,11 @@ function realPtyFactory({ shell, args, cwd, cols, rows, env }: PtyFactoryOptions
   });
 }
 
-const sessionManager = new SessionManager({ ptyFactory: realPtyFactory });
+const sessionManager = new SessionManager({
+  ptyFactory: realPtyFactory,
+  // 判定は記録の末尾ではなく画面を見る（#31）
+  screenFactory: createScreen,
+});
 
 // E2E テストから ptyFactory を差し替えられるように公開する
 globalThis.__sessionManager = sessionManager;

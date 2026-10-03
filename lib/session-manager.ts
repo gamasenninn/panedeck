@@ -31,9 +31,31 @@ export function defaultTitle(cwd?: string): string {
   return segments[segments.length - 1] ?? "session";
 }
 
+/**
+ * 判定のために「いま画面に見えているもの」を保つ入れ物（#31）。
+ *
+ * pty のバイト列は塗られたものすべての記録で、全画面 TUI は変えた領域だけを
+ * 塗り直す。記録の末尾は「最後に塗られた場所」であって画面ではない。
+ * 画面を組み立てるのは端末エミュレータの仕事なので、ここでは**形だけ**を
+ * 決めて実体は外から注入する。lib/ は端末エミュレータを知らないままでいる。
+ */
+export interface Screen {
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  /** いま見えている内容（上から下まで） */
+  read(): string;
+  dispose(): void;
+}
+
 export interface SessionManagerDeps {
   /** pty を生成する関数 */
   ptyFactory: (options: PtyFactoryOptions) => Pty;
+  /**
+   * 画面を生成する関数。渡さなければ記録の末尾で判定する（従来どおり）。
+   *
+   * 既定を持たせないのは、既定にすると lib/ が端末エミュレータに依存するため。
+   */
+  screenFactory?: (options: { cols: number; rows: number }) => Screen;
   /** 現在時刻 (ms) */
   now?: () => number;
   /** ログ保持量の上限 */
@@ -67,6 +89,10 @@ export class SessionManager {
   now: () => number;
   maxLogBytes: number;
   isProcessAlive: (pid: number) => boolean;
+  screenFactory: ((options: { cols: number; rows: number }) => Screen) | null;
+
+  /** セッション id → 画面。screenFactory を渡さなければ空のまま */
+  screens = new Map<string, Screen>();
 
   sessions = new Map<string, LiveSession>();
   nextId = 1;
@@ -79,11 +105,13 @@ export class SessionManager {
     now = () => Date.now(),
     maxLogBytes = DEFAULT_MAX_LOG_BYTES,
     isProcessAlive = processIsAlive,
+    screenFactory,
   }: SessionManagerDeps) {
     this.ptyFactory = ptyFactory;
     this.now = now;
     this.maxLogBytes = maxLogBytes;
     this.isProcessAlive = isProcessAlive;
+    this.screenFactory = screenFactory ?? null;
   }
 
   /** セッションを生成する。 */
@@ -100,6 +128,9 @@ export class SessionManager {
   }: CreateSessionOptions = {}): Session {
     const id = `s${this.nextId++}`;
     const pty = this.ptyFactory({ shell, args, cwd, cols, rows, env });
+    // 判定のための画面。記録の末尾ではなく、いま見えているものを見る（#31）
+    const screen = this.screenFactory?.({ cols, rows }) ?? null;
+    if (screen) this.screens.set(id, screen);
     const command = normalizeCommand(initialCommand);
     // 未知の id はここで既定へ寄せる。以降は必ず実在するプロファイルを指す
     const profile = resolveProfile(agent);
@@ -124,6 +155,7 @@ export class SessionManager {
 
     pty.onData((data) => {
       session.log = this._appendLog(session.log, data);
+      screen?.write(data);
       session.lastOutputAt = this.now();
       this.dataHandlers.forEach((cb) => cb(id, data));
     });
@@ -272,6 +304,8 @@ export class SessionManager {
     session.cols = cols;
     session.rows = rows;
     session.pty.resize(cols, rows);
+    // 画面にも伝える。折り返しが変わると、見えている内容そのものが変わる
+    this.screens.get(id)?.resize(cols, rows);
     return true;
   }
 
@@ -279,6 +313,9 @@ export class SessionManager {
     const session = this.sessions.get(id);
     if (!session) return false;
     session.pty.kill();
+    // 画面は行数ぶんの記憶を抱えるので、閉じたら必ず手放す
+    this.screens.get(id)?.dispose();
+    this.screens.delete(id);
     this.sessions.delete(id);
     return true;
   }
@@ -325,7 +362,9 @@ export class SessionManager {
       exited: session.exited,
       exitCode: session.exitCode,
       status: detectStatus({
-        tail: session.log.slice(-TAIL_CHARS),
+        // 画面があればそれを見る。無ければ記録の末尾（従来どおり）。
+        // 記録の末尾は「最後に塗られた場所」であって画面ではない（#31）
+        tail: this.screens.get(session.id)?.read() ?? session.log.slice(-TAIL_CHARS),
         msSinceLastOutput: this.now() - session.lastOutputAt,
         exited: session.exited,
         waitingPatterns: session.profile.waitingPatterns,
