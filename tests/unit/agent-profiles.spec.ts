@@ -52,15 +52,26 @@ test.describe("プロファイル定義", () => {
     expect(resolveProfile("gemini").id).toBe(DEFAULT_AGENT_ID);
   });
 
+  /**
+   * 実機の codex は ❯ ではなく › を使っていた。行頭に限るのは、文章中の ›
+   * を選択肢と誤認しないため。
+   *
+   * **shell は対象外**（#30）。シェルでは `❯` も `›` もプロンプトそのもので
+   * ありうるので、記号では判断しない。
+   */
   test("行頭の選択マーカー › を拾う（codex の選択肢で使われる）", () => {
-    // 実機の codex は ❯ ではなく › を使っていた。行頭に限るのは、
-    // 文章中の › を選択肢と誤認しないため
     const menu = ["› 1. Update now", "  2. Skip"].join("\n");
 
-    for (const profile of AGENT_PROFILES) {
-      if (profile.id === "claude") continue;
-      expect(profile.waitingPatterns.some((p) => p.test(menu))).toBe(true);
-    }
+    expect(
+      resolveProfile("codex").waitingPatterns.some((p) => p.test(menu))
+    ).toBe(true);
+  });
+
+  test("shell は記号で判断しない（プロンプトと区別できないため）", () => {
+    const prompt = "~/work ❯ ";
+    expect(
+      resolveProfile("shell").waitingPatterns.some((p) => p.test(prompt))
+    ).toBe(false);
   });
 
   test("文章の途中の › は選択肢とみなさない", () => {
@@ -280,5 +291,74 @@ test.describe("素の claude の入力欄", () => {
         askingPatterns: claude.askingPatterns,
       })
     ).toBe(STATUS.READY);
+  });
+});
+
+/**
+ * シェルの判定（#30）。
+ *
+ * `shell` が持っていた `❯` と行頭 `›` は、**エージェントの選択肢から
+ * そのまま引き継いだもの**で、シェルで確かめたものではない。starship や
+ * oh-my-posh ではどちらも**プロンプトそのもの**、つまり「待っていない」印に
+ * なる。確かめていない印で「要操作」と言うのは、このプロジェクトの方針に反する。
+ *
+ * 代わりに、実機で確かめた**シェルの確認プロンプト**を足す。
+ */
+test.describe("shell の判定", () => {
+  const shell = resolveProfile("shell");
+
+  const status = (tail: string) =>
+    detectStatus({
+      tail,
+      msSinceLastOutput: QUIET_MS + 100,
+      waitingPatterns: shell.waitingPatterns,
+      readyPatterns: shell.readyPatterns,
+      askingPatterns: shell.askingPatterns,
+    });
+
+  /** 実機の PowerShell から採取（書き写していない） */
+  const CONFIRM =
+    '[Y] はい(Y)  [A] すべて続行(A)  [N] いいえ(N)  [L] すべて無視(L)  [S] 中断(S)  [?] ヘルプ (既定値は "Y"): ';
+
+  test("PowerShell の確認プロンプトを拾う", () => {
+    expect(status(`確認\nこの操作を実行しますか?\n${CONFIRM}`)).toBe(STATUS.WAITING);
+  });
+
+  test("英語版の確認プロンプトも拾う", () => {
+    expect(status("[Y] Yes  [A] Yes to All  [N] No  [L] No to All  [S] Suspend")).toBe(
+      STATUS.WAITING
+    );
+  });
+
+  test("(y/n) 型も従来どおり拾う", () => {
+    expect(status("Continue? (y/n)")).toBe(STATUS.WAITING);
+  });
+
+  test("素のプロンプトは待機（何も走っていない）", () => {
+    expect(status("PS C:\work\repo>")).toBe(STATUS.IDLE);
+  });
+
+  /**
+   * #30 の本体。starship などでは `❯` がプロンプトそのもの。
+   * 「要操作」と言うと、ただ待っているだけのシェルが呼び出し続けることになる。
+   */
+  test("❯ だけのプロンプトを要操作にしない", () => {
+    expect(status("~/work ❯ ")).toBe(STATUS.IDLE);
+  });
+
+  test("行頭の › も同じ", () => {
+    expect(status("› ")).toBe(STATUS.IDLE);
+  });
+
+  /** codex の `›` は実機で採取したもの。そちらは残す */
+  test("codex の記号は影響を受けない", () => {
+    const codex = resolveProfile("codex");
+    expect(
+      detectStatus({
+        tail: "› 1. Yes, continue",
+        msSinceLastOutput: QUIET_MS + 100,
+        waitingPatterns: codex.waitingPatterns,
+      })
+    ).toBe(STATUS.WAITING);
   });
 });

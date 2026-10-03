@@ -17,15 +17,31 @@ import { WAITING_PATTERNS } from "./status-detector";
  * 確認プロンプトや選択肢はどの CLI でもほぼ同じ見た目になるので、
  * これを土台に各プロファイル固有のパターンを足す。
  */
+/**
+ * どのプログラムでも同じ形になる「はい／いいえ」の問い。
+ *
+ * 記号ではなく**問いの文面**なので、プロンプトの見た目に左右されない。
+ * シェルのように「何が動いているか分からない」場面でも使える。
+ */
+export const CONFIRMATION_PATTERNS: RegExp[] = [
+  /\(y\/n\)/i,
+  /\[y\/n\]/i,
+  /press enter/i,
+  // PowerShell の確認（-Confirm / ShouldProcess）。実機から採取:
+  //   [Y] はい(Y)  [A] すべて続行(A)  [N] いいえ(N)  [L] すべて無視(L) …
+  //   [Y] Yes  [A] Yes to All  [N] No  [L] No to All  [S] Suspend
+  // **[Y] だけでは足りない**（文章中にも出うる）。同じ行に [N] まで
+  // 揃ったときだけ問いとみなす
+  /\[Y\][^\n]*\[N\]/i,
+];
+
 export const COMMON_WAITING_PATTERNS: RegExp[] = [
   /❯/, // 選択肢プロンプト
   // 行頭の › も選択マーカー。実機の codex は ❯ ではなくこちらを使っていた。
   // 行頭に限るのは、文章中の › （File › Preferences のような表記）を
   // 選択肢と誤認しないため
   /^\s*›/m,
-  /\(y\/n\)/i, // 確認プロンプト
-  /\[y\/n\]/i,
-  /press enter/i,
+  ...CONFIRMATION_PATTERNS,
 ];
 
 /**
@@ -65,8 +81,10 @@ export const AGENT_PROFILES: AgentProfile[] = [
     // フッターはダイアログの間だけ消えるので、これを印にする
     readyPatterns: [/(?:auto|manual|plan|accept edits) mode on/i, /\? for shortcuts/i],
     // 確認ダイアログの問い。**`Esc to cancel` は使ってはいけない** ——
-    // 断った後も判定の窓に残り、asking に貼り付いてテキストが届かなくなる
-    askingPatterns: [/Do you want to/i, /\(y\/n\)/i, /\[y\/n\]/i],
+    // 断った後も判定の窓に残り、asking に貼り付いてテキストが届かなくなる。
+    // 問いの形はどのプログラムでも似るので、共通のものも併せて見る
+    // （エージェントがシェルを呼べば、シェルの確認もペインに出る）
+    askingPatterns: [/Do you want to/i, ...CONFIRMATION_PATTERNS],
   },
   {
     id: "codex",
@@ -78,7 +96,14 @@ export const AGENT_PROFILES: AgentProfile[] = [
     id: "shell",
     name: "シェル",
     command: "",
-    waitingPatterns: COMMON_WAITING_PATTERNS,
+    // **記号は使わない（#30）。** `❯` と行頭 `›` はエージェントの選択肢から
+    // 引き継いだもので、シェルで確かめたものではない。starship や oh-my-posh
+    // ではどちらも**プロンプトそのもの**、つまり「待っていない」印になる。
+    // 確かめていない印で「要操作」と言えば、ただ待っているだけのシェルが
+    // 呼び出し続けることになる。
+    //
+    // 問いの文面だけを見る。これなら、どんなプロンプトを使っていても変わらない。
+    waitingPatterns: CONFIRMATION_PATTERNS,
   },
 ];
 

@@ -161,6 +161,10 @@ The split exists because the difference only matters when text is sent without l
 
 Whether a profile can be split is per profile. **One that cannot stays on the combined `入力待ち` and never guesses `指示待ち`** — a false positive is worse than a miss. Of the bundled profiles only Claude Code splits; codex draws both its input box and its choices with a leading `›`.
 
+**The shell profile does not judge by glyphs.** Under starship, oh-my-posh and similar themes `❯` and a leading `›` *are* the prompt — a shell waiting for nothing — and cannot be told from a menu. So the shell profile reads only the wording of a question: `(y/n)`, the `[Y] … [N]` form PowerShell uses for `-Confirm`, and so on. A shell sitting at its prompt therefore reads `待機`, which is right: nothing needs you.
+
+One consequence: **broadcasting text never reaches a shell pane**, because the filter targets `指示待ち` and a shell cannot claim it. Turn "waiting only" off to reach them.
+
 A cursor glyph is not enough on its own. In the real Claude Code, `❯` appears both at the input box and as the selection cursor inside a confirmation dialog, so `指示待ち` requires a marker that says *input box* — the footer of the ordinary prompt. A screen carrying only a cursor falls back to `入力待ち`, which means **an unfamiliar dialog breaks towards not sending rather than towards sending**.
 
 Detection is a pure function in `lib/status-detector.ts` and looks at the last 10 lines only.
