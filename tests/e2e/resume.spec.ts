@@ -86,6 +86,20 @@ async function logOf(index: number): Promise<string> {
   return compact(await rawLogOf(index));
 }
 
+/**
+ * 題で引いた記録。
+ *
+ * **添字では順序に依存する。** 2 枚を見分けるときは題で引く
+ * （どちらがどちらか取り違えていないことが、この機能の肝なので）。
+ */
+async function logByTitle(title: string): Promise<string> {
+  const raw = await electronApp.evaluate(({}, t) => {
+    const found = global.__sessionManager.list().find((s: any) => s.title === t);
+    return found ? global.__sessionManager.getLog(found.id) : "";
+  }, title);
+  return compact(raw);
+}
+
 test.afterEach(async () => {
   if (electronApp) await closeApp(electronApp);
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
@@ -199,15 +213,23 @@ test("同じディレクトリの 2 枚が、それぞれ自分の会話へ戻�
   await waitForPaneCount(page, 2);
 
   await expect
-    .poll(() => logOf(0), { timeout: 15_000 })
+    .poll(() => logByTitle("一枚目"), { timeout: 15_000 })
     .toContain(compact(`echo --resume ${first}`));
   await expect
-    .poll(() => logOf(1), { timeout: 15_000 })
+    .poll(() => logByTitle("二枚目"), { timeout: 15_000 })
     .toContain(compact(`echo --resume ${second}`));
 
+  // 落ちたときに何が起きたか分かるように、セッションの並びを残す
+  const sessions = await electronApp.evaluate(() =>
+    global.__sessionManager
+      .list()
+      .map((s: any) => `${s.id}:${s.title}:${s.sessionId ?? "-"}`)
+  );
+  console.log("セッションの並び: " + JSON.stringify(sessions));
+
   // **取り違えていないこと。** 同じディレクトリなので、ここが肝
-  expect(await logOf(0)).not.toContain(second);
-  expect(await logOf(1)).not.toContain(first);
+  expect(await logByTitle("一枚目")).not.toContain(second);
+  expect(await logByTitle("二枚目")).not.toContain(first);
 });
 
 /**
