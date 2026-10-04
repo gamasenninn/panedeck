@@ -244,6 +244,12 @@ It never shows up in manual use, because a person types and then presses Enter a
 
 If the pane has not moved a few seconds after Enter, PaneDeck presses it again, up to three times. If it still has not moved, **the lines go back to held** and the toolbar says so. They are never marked delivered on the strength of having been written — that was the original bug, and it consumed the line while leaving the message unsent in the input box.
 
+#### One queue, one deliverer
+
+Whatever a trigger watches, exactly one thing may consume it. If a pane also watches the same file itself — a `tail -F` inside the agent, say — the two share one read position and each will skip what the other consumed. It is not untidiness; it is two writers to one variable.
+
+So a pane fed by a trigger must not run its own watcher. Teams can differ — one on triggers, one on its own watching — as long as no single queue has two deliverers.
+
 ### Keeping a command running (services)
 
 A trigger covers the case where something on this machine writes the file. When the source is remote, something local has to hold the connection and write what it receives — and that something, run inside an agent's pane, dies with the pane.
