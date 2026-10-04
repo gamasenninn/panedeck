@@ -67,6 +67,11 @@ async function launchWith(entries: unknown[]) {
  *
  * **端末は 80 桁で折り返す。** プロンプトが長いと、流し込んだコマンドの
  * 途中に改行が割り込むので、そのままでは部分一致が取れない（実際に踏んだ）。
+ *
+ * ★★ **「含まれないこと」をこの記録で見てはいけない。** PSReadLine は
+ * 履歴からの候補を薄い字で**端末に書く**ので、前のテストで打った
+ * `echo --session-id <別の uuid>` が記録に現れる。CI でこれに引っかかり、
+ * ペインが会話を取り違えたと誤って判定した。**「含まれること」だけを見る。**
  */
 function compact(text: string): string {
   return stripAnsi(text).replace(/\s+/g, "");
@@ -136,7 +141,14 @@ test("記録が無いペインは、新しい会話で起こす", async () => {
 
   // 保存されていた id は捨てて、新しい id で始める形になる
   await expect.poll(() => logOf(0), { timeout: 15_000 }).toContain("--session-id");
-  expect(await logOf(0)).not.toContain(id);
+
+  const ids = await electronApp.evaluate(() =>
+    global.__sessionManager.list().map((s: any) => s.sessionId)
+  );
+  expect(ids[0]).not.toBe(id);
+  expect(ids[0]).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+  );
 });
 
 /** 受付のような常駐。記録があっても再開しない */
@@ -160,7 +172,12 @@ test("再開しない印のペインは、記録があっても新しい会話�
   await waitForPaneCount(page, 1);
 
   await expect.poll(() => logOf(0), { timeout: 15_000 }).toContain("--session-id");
-  expect(await logOf(0)).not.toContain(id);
+
+  // 記録があっても再開しない。保存されていた id ではない id で立つ
+  const ids = await electronApp.evaluate(() =>
+    global.__sessionManager.list().map((s: any) => s.sessionId)
+  );
+  expect(ids[0]).not.toBe(id);
 });
 
 /** 会話の概念が無いプロファイルは、今までどおり起こす */
@@ -171,8 +188,12 @@ test("shell のペインには会話の指定を付けない", async () => {
   await waitForPaneCount(page, 1);
 
   await expect.poll(() => logOf(0), { timeout: 15_000 }).toContain(compact("echo hi"));
-  // 会話の指定は付かない
-  expect(await logOf(0)).not.toContain("--session-id");
+
+  // 会話の id を持たない（記録で見ると履歴の候補を拾うので、セッションで見る）
+  const ids = await electronApp.evaluate(() =>
+    global.__sessionManager.list().map((s: any) => s.sessionId ?? null)
+  );
+  expect(ids).toEqual([null]);
 });
 
 /**
@@ -219,17 +240,14 @@ test("同じディレクトリの 2 枚が、それぞれ自分の会話へ戻�
     .poll(() => logByTitle("二枚目"), { timeout: 15_000 })
     .toContain(compact(`echo --resume ${second}`));
 
-  // 落ちたときに何が起きたか分かるように、セッションの並びを残す
-  const sessions = await electronApp.evaluate(() =>
-    global.__sessionManager
-      .list()
-      .map((s: any) => `${s.id}:${s.title}:${s.sessionId ?? "-"}`)
+  // **取り違えていないこと。** 同じディレクトリなので、ここが肝。
+  // 端末の記録ではなくセッションが持つ id で見る（記録には履歴の候補が混ざる）
+  const held = await electronApp.evaluate(() =>
+    Object.fromEntries(
+      global.__sessionManager.list().map((s: any) => [s.title, s.sessionId])
+    )
   );
-  console.log("セッションの並び: " + JSON.stringify(sessions));
-
-  // **取り違えていないこと。** 同じディレクトリなので、ここが肝
-  expect(await logByTitle("一枚目")).not.toContain(second);
-  expect(await logByTitle("二枚目")).not.toContain(first);
+  expect(held).toEqual({ 一枚目: first, 二枚目: second });
 });
 
 /**
