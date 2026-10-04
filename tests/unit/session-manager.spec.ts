@@ -643,10 +643,17 @@ test.describe("状態で絞った一斉送信", () => {
   });
 });
 
+/**
+ * ここは**正規化だけ**を見る。
+ *
+ * 既定のプロファイル（claude）は会話の id を添えて起こすようになったので
+ * （#33）、`agent: "shell"` を指定して会話の話を混ぜない。id の付き方は
+ * 「会話の id」の節で別に確かめる。
+ */
 test.describe("起動コマンド (initialCommand)", () => {
   test("起動直後に pty へ改行付きで書き込む", () => {
     const { manager, ptyFactory } = setup();
-    manager.create({ cwd: "a", initialCommand: "claude" });
+    manager.create({ cwd: "a", initialCommand: "claude", agent: "shell" });
 
     expect(ptyFactory.last()!.written).toEqual(["claude\r"]);
   });
@@ -675,7 +682,7 @@ test.describe("起動コマンド (initialCommand)", () => {
 
   test("セッションごとに独立した値を持つ", () => {
     const { manager, ptyFactory } = setup();
-    manager.create({ cwd: "a", initialCommand: "claude" });
+    manager.create({ cwd: "a", initialCommand: "claude", agent: "shell" });
     manager.create({ cwd: "b", initialCommand: "codex --resume" });
     manager.create({ cwd: "c" });
 
@@ -692,7 +699,7 @@ test.describe("起動コマンド (initialCommand)", () => {
 
   test("前後の空白は落とす", () => {
     const { manager, ptyFactory } = setup();
-    manager.create({ cwd: "a", initialCommand: "  claude  " });
+    manager.create({ cwd: "a", initialCommand: "  claude  ", agent: "shell" });
 
     expect(ptyFactory.last()!.written).toEqual(["claude\r"]);
   });
@@ -909,5 +916,98 @@ test.describe("画面から判定する", () => {
     manager.close(a.id);
 
     expect(screenFactory.screens[0].disposed).toBe(true);
+  });
+});
+
+/**
+ * 会話を指定して起動する（#33）。
+ *
+ * 復元したペインを**それぞれ自分の会話へ**戻すため、会話の id をセッションと
+ * 組で持つ。`--continue` では足りない —— あれは作業ディレクトリの最後の会話を
+ * 開くので、同じディレクトリの 3 枚が同じ会話を開く。
+ */
+test.describe("会話の id", () => {
+  function setupWithIds(ids: string[]) {
+    let next = 0;
+    const factory = createFakePtyFactory();
+    const manager = new SessionManager({
+      ptyFactory: factory,
+      newSessionId: () => ids[next++] ?? "unexpected",
+    });
+    return { manager, factory };
+  }
+
+  test("会話を持てるプロファイルなら id を振って始める形で起こす", () => {
+    const { manager, factory } = setupWithIds(["uuid-1"]);
+    const session = manager.create({
+      cwd: "/work",
+      initialCommand: "claude",
+      agent: "claude",
+    });
+
+    expect(session.sessionId).toBe("uuid-1");
+    expect(factory.created[0].written[0]).toBe("claude --session-id uuid-1\r");
+  });
+
+  test("id を渡されたら再開の形で起こす", () => {
+    const { manager, factory } = setupWithIds([]);
+    const session = manager.create({
+      cwd: "/work",
+      initialCommand: "claude",
+      agent: "claude",
+      sessionId: "uuid-old",
+      resume: true,
+    });
+
+    expect(session.sessionId).toBe("uuid-old");
+    expect(factory.created[0].written[0]).toBe("claude --resume uuid-old\r");
+  });
+
+  /** 記録が無いペインは再開できない。新しい会話で始める（#33 の退避） */
+  test("再開しないと言われたら、渡された id は捨てて新しく始める", () => {
+    const { manager, factory } = setupWithIds(["uuid-new"]);
+    const session = manager.create({
+      cwd: "/work",
+      initialCommand: "claude",
+      agent: "claude",
+      sessionId: "uuid-old",
+      resume: false,
+    });
+
+    expect(session.sessionId).toBe("uuid-new");
+    expect(factory.created[0].written[0]).toBe("claude --session-id uuid-new\r");
+  });
+
+  /** shell には会話の概念が無い。宣言しないプロファイルは従来どおり */
+  test("宣言しないプロファイルには id を振らない", () => {
+    const { manager, factory } = setupWithIds(["uuid-1"]);
+    const session = manager.create({
+      cwd: "/work",
+      initialCommand: "npm run dev",
+      agent: "shell",
+    });
+
+    expect(session.sessionId).toBeUndefined();
+    expect(factory.created[0].written[0]).toBe("npm run dev\r");
+  });
+
+  test("素のシェル（起動コマンド無し）には id を振らない", () => {
+    const { manager } = setupWithIds(["uuid-1"]);
+    const session = manager.create({ cwd: "/work", agent: "claude" });
+
+    expect(session.sessionId).toBeUndefined();
+  });
+
+  /** 人が自分で `--continue` と書いたなら、それを尊重する */
+  test("すでに会話を指している指定には触らない", () => {
+    const { manager, factory } = setupWithIds(["uuid-1"]);
+    const session = manager.create({
+      cwd: "/work",
+      initialCommand: "claude --continue",
+      agent: "claude",
+    });
+
+    expect(session.sessionId).toBeUndefined();
+    expect(factory.created[0].written[0]).toBe("claude --continue\r");
   });
 });

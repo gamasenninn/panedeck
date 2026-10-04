@@ -36,6 +36,15 @@ export interface Session {
   initialCommand?: string;
   /** 入力待ちの判定に使うプロファイル id */
   agent: string;
+  /** このペインの会話の id（#33）。会話を持たないペインでは無い */
+  sessionId?: string;
+  /**
+   * このペインは会話を再開しない（#33）。
+   *
+   * **印は生き残らなければ意味が無い。** 保存して復元してまた保存する間に
+   * 落ちると、次の起動で勝手に再開し始める
+   */
+  noResume?: boolean;
   exited: boolean;
   exitCode: number | null;
   status: SessionStatus;
@@ -52,6 +61,17 @@ export interface CreateSessionOptions {
   env?: Record<string, string>;
   initialCommand?: string;
   agent?: string;
+  /** 戻る先の会話の id（#33）。復元のときに渡す */
+  sessionId?: string;
+  /**
+   * 会話を再開するか（#33）。
+   *
+   * `false` なら、渡された id は捨てて**新しい会話で始める**。記録が
+   * 残っていないペイン、再開しない設定のペインで使う。
+   */
+  resume?: boolean;
+  /** このペインは会話を再開しない（#33） */
+  noResume?: boolean;
 }
 
 /**
@@ -62,6 +82,19 @@ export interface AgentProfileSummary {
   id: string;
   name: string;
   command: string;
+}
+
+/**
+ * 会話を指定して起動するための呼び方（#33）。`{id}` が会話の id に置き換わる。
+ *
+ * **初回と再開で別の呼び方が要る。** 実測（claude 2.1.288）では、同じ
+ * `--session-id` を 2 回使うと `Session ID ... is already in use.` で落ちる。
+ */
+export interface SessionFlags {
+  /** 新しい会話を始める形 */
+  start: string;
+  /** 会話を再開する形 */
+  resume: string;
 }
 
 /** 判定パターン込みのプロファイル（メインプロセス内でのみ使う） */
@@ -76,6 +109,22 @@ export interface AgentProfile extends AgentProfileSummary {
   readyPatterns?: RegExp[];
   /** 質問で止まっていると分かる印（#27）。これがあるときだけ分割が働く */
   askingPatterns?: RegExp[];
+  /**
+   * 会話を指定して起動するための呼び方（#33）。
+   *
+   * **初回と再開で呼び方が違う。** 同じ呼び方では 2 回目が落ちる
+   * （claude は `Session ID ... is already in use.`）。
+   * 宣言しないプロファイルは従来どおり起動する。
+   */
+  sessionFlags?: SessionFlags;
+  /**
+   * 会話の記録がある場所（#33）。再開できるかを事前に調べるために使う。
+   *
+   * **符号化の作法はここに閉じる。** PaneDeck に知らせると、エージェントを
+   * 増やすたびに PaneDeck を直すことになる。宣言しなければ調べずに、
+   * 失敗したときの退避だけに頼る。
+   */
+  recordFile?: (cwd: string, sessionId: string) => string;
 }
 
 /** node-pty のうち SessionManager が使う部分。テストのフェイクもこの形 */
@@ -112,6 +161,10 @@ export interface LiveSession {
   cols: number;
   rows: number;
   initialCommand?: string;
+  /** このペインの会話の id（#33） */
+  sessionId?: string;
+  /** このペインは会話を再開しない（#33） */
+  noResume?: boolean;
   profile: AgentProfile;
   pty: Pty;
   log: string;
@@ -128,6 +181,15 @@ export interface WorkspaceEntry {
   args: string[];
   initialCommand?: string;
   agent?: string;
+  /**
+   * このペインの会話の id（#33）。
+   *
+   * **ペインと組で保存され、組で復元される。** 題を鍵にすると重なった
+   * ときに決められず、ペインの id は起動ごとに振り直されるので跨げない。
+   */
+  sessionId?: string;
+  /** このペインは会話を再開しない（#33）。受付のような常駐には向かない */
+  noResume?: boolean;
 }
 
 export interface Workspace {

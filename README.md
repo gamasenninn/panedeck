@@ -207,6 +207,21 @@ Double-click a pane's title to rename it. Enter or losing focus commits, Escape 
 
 The default title is the last segment of the working directory, so two panes in one directory doing different jobs are indistinguishable. Triggers address a pane by title, which is why they need to be separable.
 
+### Coming back to the same conversation
+
+When PaneDeck restores a deck, each agent pane returns to **its own** conversation rather than starting over.
+
+`claude --continue` cannot do this: it opens the most recent conversation *in the working directory*, so three panes sharing one directory all open the same one. Instead PaneDeck chooses an id when it creates a pane, starts the agent with it, and saves the id beside that pane in the restore file. On restore it asks the agent to resume that id.
+
+PaneDeck stores **only the id.** The conversation itself stays wherever the agent already keeps it.
+
+- The id lives in the pane's entry, not under its title or its pane id. **Titles collide** — two panes called `panedeck` cannot say which conversation is meant — and **pane ids are reissued** on every launch, so neither can point at the same thing across a restart. Renaming a pane does not lose its conversation
+- **The flags belong to the profile.** A profile that declares none starts exactly as it does now, so a shell pane is untouched
+- **A command that already chooses a conversation is left alone.** Writing `claude --continue` yourself means you want that, and nothing is appended
+- **Before resuming, PaneDeck checks that the agent still has a record of that conversation.** A pane closed before any exchange has none, so it starts fresh instead of failing. Where the record lives is also the profile's business
+- If a resumed pane dies straight away anyway, it is started once more as a new conversation — **once**, so a genuinely broken command does not loop
+- `"noResume": true` on an entry opts a pane out. A reception pane fed by a trigger keeps its state in the queue and watermark files, not in the conversation, so a fresh one is enough and lighter than resuming weeks of history
+
 ### Telling a pane that a file grew (triggers)
 
 A way for things outside PaneDeck — a message queue, a CI result, another agent — to say "something arrived for you". Configured in `settings.json`.

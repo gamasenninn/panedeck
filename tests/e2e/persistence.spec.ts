@@ -9,6 +9,7 @@ import {
   createSession,
   emitPtyData,
   writtenTo,
+  launchedIn,
   listSessions,
   mockOpenDialog,
   mockOpenDialogCancel,
@@ -224,7 +225,9 @@ test.describe("セッションごとの起動コマンドの往復", () => {
     await page.locator("[data-testid=restore-workspace]").click();
     await waitForPaneCount(page, 3);
 
-    expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
+    // 会話の id を添えて起こす（#33）。id は毎回違うので伏せる
+    expect(await launchedIn(electronApp, 0)).toEqual(["claude --session-id <uuid>\r"]);
+    // **人が自分で `--resume` と書いた指定には足さない**
     expect(await writtenTo(electronApp, 1)).toEqual(["codex --resume\r"]);
     // 起動コマンドを持たないセッションは素のシェルのまま
     expect(await writtenTo(electronApp, 2)).toEqual([]);

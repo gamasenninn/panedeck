@@ -7,7 +7,10 @@ import type {
   BroadcastOptions,
 } from "../types/panedeck";
 import { detectStatus, STATUS } from "./status-detector";
+import { randomUUID } from "crypto";
+
 import { normalizeCommand } from "./command";
+import { sessionCommand } from "./session-command";
 import { resolveProfile } from "./agent-profiles";
 
 export { STATUS };
@@ -67,6 +70,12 @@ export interface SessionManagerDeps {
    * 何も起こさずに生死だけを確かめられる。
    */
   isProcessAlive?: (pid: number) => boolean;
+  /**
+   * 会話の id を作る（#33）。テストから差し替えられるように注入する。
+   *
+   * 既定は `crypto.randomUUID()`。claude は有効な UUID を要求する。
+   */
+  newSessionId?: () => string;
 }
 
 function processIsAlive(pid: number): boolean {
@@ -89,6 +98,7 @@ export class SessionManager {
   now: () => number;
   maxLogBytes: number;
   isProcessAlive: (pid: number) => boolean;
+  private newSessionId: () => string;
   screenFactory: ((options: { cols: number; rows: number }) => Screen) | null;
 
   /** セッション id → 画面。screenFactory を渡さなければ空のまま */
@@ -106,12 +116,14 @@ export class SessionManager {
     maxLogBytes = DEFAULT_MAX_LOG_BYTES,
     isProcessAlive = processIsAlive,
     screenFactory,
+    newSessionId = () => randomUUID(),
   }: SessionManagerDeps) {
     this.ptyFactory = ptyFactory;
     this.now = now;
     this.maxLogBytes = maxLogBytes;
     this.isProcessAlive = isProcessAlive;
     this.screenFactory = screenFactory ?? null;
+    this.newSessionId = newSessionId;
   }
 
   /** セッションを生成する。 */
@@ -125,6 +137,9 @@ export class SessionManager {
     env,
     initialCommand,
     agent,
+    sessionId,
+    resume,
+    noResume,
   }: CreateSessionOptions = {}): Session {
     const id = `s${this.nextId++}`;
     const pty = this.ptyFactory({ shell, args, cwd, cols, rows, env });
@@ -135,6 +150,23 @@ export class SessionManager {
     // 未知の id はここで既定へ寄せる。以降は必ず実在するプロファイルを指す
     const profile = resolveProfile(agent);
 
+    // 会話を指定して起こす（#33）。**再開しないと言われたら渡された id は
+    // 捨てて新しく始める** —— 記録が無いペインは再開できないため
+    const mode = sessionId && resume !== false ? "resume" : "start";
+    const chosen = mode === "resume" ? sessionId : this.newSessionId();
+    // **打つものと、覚えておくものは別。** `initialCommand` は人が頼んだ形の
+    // まま保つ（これが構成に保存される）。会話の id を焼き付けると、次の復元で
+    // 再開の呼び方が使われず、同じ会話を始める形で起こそうとして落ちる
+    const launch = sessionCommand({
+      command,
+      flags: profile.sessionFlags,
+      sessionId: chosen,
+      mode,
+    });
+    // 添えられなかったなら、この会話を覚えておく意味が無い（素のシェル・
+    // 宣言しないプロファイル・人が自分で会話を指している指定）
+    const liveSessionId = launch !== command ? chosen : undefined;
+
     const session: LiveSession = {
       id,
       title: title || defaultTitle(cwd),
@@ -144,6 +176,8 @@ export class SessionManager {
       cols,
       rows,
       initialCommand: command,
+      sessionId: liveSessionId,
+      noResume,
       profile,
       pty,
       log: "",
@@ -167,7 +201,7 @@ export class SessionManager {
     });
 
     // ハンドラ登録後に流し込む。これで起動コマンド自身のエコーもログに載る。
-    if (command) pty.write(`${command}\r`);
+    if (launch) pty.write(`${launch}\r`);
 
     return this._snapshot(session);
   }
@@ -359,6 +393,8 @@ export class SessionManager {
       rows: session.rows,
       initialCommand: session.initialCommand,
       agent: session.profile.id,
+      sessionId: session.sessionId,
+      noResume: session.noResume,
       exited: session.exited,
       exitCode: session.exitCode,
       status: detectStatus({

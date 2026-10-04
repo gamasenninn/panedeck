@@ -315,3 +315,54 @@ test.describe("saveWorkspace / loadWorkspace", () => {
     ]);
   });
 });
+
+/**
+ * 会話の id を、ペインと組で保存する（#33）。
+ *
+ * **題でもペインの id でもなく、この行に置く。** 題は重なるので、どちらの
+ * 会話か決められない。ペインの id は起動ごとに振り直されるので跨げない。
+ * 行に置けば、組で保存され組で復元され、題を変えても付いてくる。
+ */
+test.describe("会話の id", () => {
+  test("保存して読み戻せる", () => {
+    const saved = serializeWorkspace([
+      { cwd: "/work", args: [], initialCommand: "claude", sessionId: "uuid-1" },
+    ]);
+    expect(saved.sessions[0].sessionId).toBe("uuid-1");
+
+    const read = parseWorkspace(JSON.stringify(saved));
+    expect(read.sessions[0].sessionId).toBe("uuid-1");
+  });
+
+  /** 会話を持たないペインの行に空の項目を残さない */
+  test("無いときは項目を持たせない", () => {
+    const saved = serializeWorkspace([{ cwd: "/work", args: [] }]);
+    expect("sessionId" in saved.sessions[0]).toBe(false);
+  });
+
+  test("文字列でない id は読まなかったことにする", () => {
+    const read = parseWorkspace(
+      JSON.stringify({
+        version: 1,
+        name: "x",
+        sessions: [{ cwd: "/work", args: [], sessionId: 123 }],
+      })
+    );
+    expect(read.sessions[0].sessionId).toBeUndefined();
+  });
+
+  test("再開しない印も保存して読み戻せる", () => {
+    const saved = serializeWorkspace([
+      { cwd: "/work", args: [], initialCommand: "claude", noResume: true },
+    ]);
+    expect(saved.sessions[0].noResume).toBe(true);
+
+    const read = parseWorkspace(JSON.stringify(saved));
+    expect(read.sessions[0].noResume).toBe(true);
+  });
+
+  test("再開しない印が無いときは項目を持たせない", () => {
+    const saved = serializeWorkspace([{ cwd: "/work", args: [] }]);
+    expect("noResume" in saved.sessions[0]).toBe(false);
+  });
+});

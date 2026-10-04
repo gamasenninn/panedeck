@@ -6,6 +6,7 @@ import {
   useFakePty,
   createSession,
   writtenTo,
+  launchedIn,
   listSessions,
   mockOpenDialog,
   mockOpenDialogCancel,
@@ -78,7 +79,8 @@ test("initialCommand がセッション起動直後に流し込まれる", async
   await createSession(page, { cwd: "C:\\app\\repo-a", initialCommand: "claude" });
   await waitForPaneCount(page, 1);
 
-  expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
+  // 既定のプロファイルは会話の id を添えて起こす（#33）。id は毎回違うので伏せる
+  expect(await launchedIn(electronApp, 0)).toEqual(["claude --session-id <uuid>\r"]);
 });
 
 test("initialCommand が空なら何も書き込まない", async () => {
@@ -127,7 +129,7 @@ test("セッション追加ボタンでディレクトリを選ぶとセッシ�
 
   await expect(page.locator("[data-testid=pane-title]")).toHaveText("picked-repo");
   // ツールバーの起動コマンド（既定 "claude"）が流し込まれる
-  expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
+  expect(await launchedIn(electronApp, 0)).toEqual(["claude --session-id <uuid>\r"]);
 });
 
 test("ディレクトリ選択をキャンセルしたらセッションは増えない", async () => {
@@ -148,7 +150,8 @@ test.describe("セッションごとの起動コマンド", () => {
     await createSession(page, { cwd: "C:\\app\\repo-c", initialCommand: "" });
     await waitForPaneCount(page, 3);
 
-    expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
+    expect(await launchedIn(electronApp, 0)).toEqual(["claude --session-id <uuid>\r"]);
+    // **人が自分で `--resume` と書いた指定には足さない**（#33）
     expect(await writtenTo(electronApp, 1)).toEqual(["codex --resume\r"]);
     expect(await writtenTo(electronApp, 2)).toEqual([]);
   });
@@ -167,8 +170,8 @@ test.describe("セッションごとの起動コマンド", () => {
     await page.locator("[data-testid=add-session]").click();
     await waitForPaneCount(page, 2);
 
-    expect(await writtenTo(electronApp, 0)).toEqual(["claude\r"]);
-    expect(await writtenTo(electronApp, 1)).toEqual(["codex\r"]);
+    expect(await launchedIn(electronApp, 0)).toEqual(["claude --session-id <uuid>\r"]);
+    expect(await launchedIn(electronApp, 1)).toEqual(["codex --session-id <uuid>\r"]);
 
     // 後続のテストのために既定値へ戻す
     await toolbar.fill("claude");

@@ -6,15 +6,18 @@ import * as pty from "node-pty";
 
 import type {
   CreateSessionOptions,
+  Session,
   Pty,
   PtyFactoryOptions,
   Settings,
+  WorkspaceEntry,
 } from "./types/panedeck";
 import { SessionManager } from "./lib/session-manager";
 import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace";
-import { listProfiles } from "./lib/agent-profiles";
+import { listProfiles, resolveProfile } from "./lib/agent-profiles";
 import { TriggerWatcher } from "./lib/trigger-watcher";
 import { createScreen } from "./lib/screen";
+import { resumePlan } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
 import { readSettings, updateSettings } from "./lib/settings";
@@ -190,12 +193,74 @@ function restoreLastSession(): void {
 
   for (const entry of workspace.sessions) {
     try {
-      sessionManager.create(entry);
+      openFromEntry(entry);
     } catch {
       // 1 つのディレクトリが消えていても、残りは開く
     }
   }
 }
+
+/**
+ * 保存された 1 行からペインを開く（#33）。
+ *
+ * **自動復元と手動の復元で同じ判断を通す。** 片方だけに置くと、手で選んだ
+ * 構成が記録の無い会話を再開しようとして落ちる（実際にそうなっていた）。
+ */
+function openFromEntry(entry: WorkspaceEntry): Session {
+  const plan = resumePlan({
+    entry,
+    profile: resolveProfile(entry.agent),
+    exists: (file) => fs.existsSync(file),
+  });
+  const session = sessionManager.create({ ...entry, ...plan });
+  // 再開で起こしたものだけ、落ちたときの立て直しを見張る
+  if (plan.resume) watchResume(session.id, entry);
+  return session;
+}
+
+/**
+ * 再開で起こしたペインが落ちたら、**1 回だけ**新しい会話で立て直す（#33）。
+ *
+ * 記録を調べても再開が失敗することはある（記録はあるが読めない、など）。
+ * ただし**繰り返してはいけない** —— 本当に壊れているコマンドだと、
+ * 立て直しの輪に入る。
+ */
+function watchResume(id: string, entry: WorkspaceEntry): void {
+  pendingResumes.set(id, { entry, at: Date.now() });
+}
+
+/**
+ * 再開で起こしたペインが落ちたなら、新しい会話で立て直す。
+ *
+ * **1 回だけ。** 立て直したペインは見張りから外すので、輪には入らない。
+ */
+function retryWithoutResume(id: string, exitCode: number): void {
+  const pending = pendingResumes.get(id);
+  if (!pending) return;
+  pendingResumes.delete(id);
+
+  // 長く走ってから落ちたのは普通の終了。立て直さない
+  if (Date.now() - pending.at > RESUME_FAILED_MS) return;
+  if (exitCode === 0) return;
+
+  try {
+    sessionManager.close(id);
+    // **新しい会話で。** 同じ id で起こし直しても、また同じ理由で落ちる
+    sessionManager.create({ ...pending.entry, sessionId: undefined, resume: false });
+  } catch {
+    // 立て直せなくても、残りのペインは動かし続ける
+  }
+}
+
+/** 再開で起こしたペイン。落ちたら 1 回だけ立て直す */
+const pendingResumes = new Map<string, { entry: WorkspaceEntry; at: number }>();
+
+/**
+ * 再開したペインが**すぐに**落ちたなら、再開の失敗とみなす。
+ *
+ * 長く走ってから落ちたのは普通の終了なので、立て直さない。
+ */
+const RESUME_FAILED_MS = 10_000;
 
 /** OS 既定のシェル */
 function defaultShell(): string {
@@ -237,9 +302,11 @@ sessionManager.onData((id, data) => {
   // 書き込みはここでは行わない。pty の出力は高頻度なので、溜めて定期的に流す
   logWriter?.append(id, data);
 });
-sessionManager.onExit((id, exitCode) =>
-  sendToRenderer("session:exit", { id, exitCode })
-);
+sessionManager.onExit((id, exitCode) => {
+  sendToRenderer("session:exit", { id, exitCode });
+  // 再開に失敗したペインを、新しい会話で立て直す（#33）
+  retryWithoutResume(id, exitCode);
+});
 
 /**
  * 設定のトリガーを起こす（#28）。
@@ -574,7 +641,9 @@ ipcMain.handle("workspace:restore", async () => {
 
   try {
     const workspace = loadWorkspace(result.filePaths[0]);
-    const created = workspace.sessions.map((entry) => sessionManager.create(entry));
+    // 自動復元と**同じ判断を通す**（#33）。手で選んだ構成でも、記録が無い
+    // 会話を再開しようとすれば同じように落ちる
+    const created = workspace.sessions.map((entry) => openFromEntry(entry));
     for (const session of created) logWriter?.open(session.id, session.title);
 
     persistSessions();

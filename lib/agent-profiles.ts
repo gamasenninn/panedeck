@@ -8,6 +8,9 @@
  * 状態を持たない定義とルックアップだけ。Electron にも pty にも依存しない。
  */
 
+import os from "os";
+import path from "path";
+
 import type { AgentProfile, AgentProfileSummary } from "../types/panedeck";
 import { WAITING_PATTERNS } from "./status-detector";
 
@@ -34,6 +37,25 @@ export const CONFIRMATION_PATTERNS: RegExp[] = [
   // 揃ったときだけ問いとみなす
   /\[Y\][^\n]*\[N\]/i,
 ];
+
+/**
+ * Claude Code が会話の記録を置く場所（#33）。
+ *
+ * 作業ディレクトリを鍵にした入れ物の中に、会話ごとの 1 ファイルがある:
+ *   `C:\app\panedeck` → `~/.claude/projects/C--app-panedeck/<uuid>.jsonl`
+ *
+ * **この符号化の作法はここに閉じる。** PaneDeck 本体に持たせると、
+ * エージェントを増やすたびに本体を直すことになる（#33 の「依存しない」）。
+ *
+ * 区切りは `\` でも `/` でも同じ鍵になるように均す。設定は手で書かれるので
+ * 両方の書き方が来る。
+ */
+function claudeRecordFile(cwd: string, sessionId: string): string {
+  // **1 文字ずつ置き換える。** `+` を付けて続きをまとめると `C:\app` が
+  // `C-app` になり、実機の `C--app-panedeck` と合わない（実際に踏んだ）
+  const key = cwd.replace(/[:\\/]/g, "-");
+  return path.join(os.homedir(), ".claude", "projects", key, `${sessionId}.jsonl`);
+}
 
 export const COMMON_WAITING_PATTERNS: RegExp[] = [
   /❯/, // 選択肢プロンプト
@@ -85,6 +107,10 @@ export const AGENT_PROFILES: AgentProfile[] = [
     // 問いの形はどのプログラムでも似るので、共通のものも併せて見る
     // （エージェントがシェルを呼べば、シェルの確認もペインに出る）
     askingPatterns: [/Do you want to/i, ...CONFIRMATION_PATTERNS],
+    // 会話を指定して起動する呼び方（#33）。**初回と再開で別物** ——
+    // 同じ `--session-id` を 2 回使うと `already in use` で落ちる（実測）
+    sessionFlags: { start: "--session-id {id}", resume: "--resume {id}" },
+    recordFile: claudeRecordFile,
   },
   {
     id: "codex",

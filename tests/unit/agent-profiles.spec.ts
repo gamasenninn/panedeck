@@ -362,3 +362,46 @@ test.describe("shell の判定", () => {
     ).toBe(STATUS.WAITING);
   });
 });
+
+/**
+ * 会話を指定して起動するための宣言（#33）。
+ *
+ * **呼び方も記録の場所もプロファイルが持つ。** PaneDeck は符号化の作法を
+ * 知らない —— 知らせると、エージェントを増やすたびに PaneDeck を直すことになる。
+ */
+test.describe("会話の再開の宣言", () => {
+  test("claude は呼び方を宣言する", () => {
+    const claude = resolveProfile("claude");
+    expect(claude.sessionFlags).toEqual({
+      start: "--session-id {id}",
+      resume: "--resume {id}",
+    });
+  });
+
+  /** shell には会話の概念が無い。宣言しなければ従来どおり起動する */
+  test("shell は宣言しない", () => {
+    expect(resolveProfile("shell").sessionFlags).toBeUndefined();
+    expect(resolveProfile("shell").recordFile).toBeUndefined();
+  });
+
+  /**
+   * 記録の場所。**実機から採取した形**:
+   *   C:\app\panedeck → ~/.claude/projects/C--app-panedeck/<uuid>.jsonl
+   */
+  test("claude は記録の場所を組み立てられる", () => {
+    const claude = resolveProfile("claude");
+    const file = claude.recordFile!("C:\\app\\panedeck", "abc-123");
+
+    expect(file.replace(/\\/g, "/")).toContain(
+      ".claude/projects/C--app-panedeck/abc-123.jsonl"
+    );
+  });
+
+  test("区切りの向きが混ざっていても同じ鍵になる", () => {
+    const claude = resolveProfile("claude");
+    const back = claude.recordFile!("C:\\app\\panedeck", "x");
+    const forward = claude.recordFile!("C:/app/panedeck", "x");
+
+    expect(forward).toBe(back);
+  });
+});

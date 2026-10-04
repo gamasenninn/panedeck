@@ -33,6 +33,16 @@ function toEntry(source: Partial<WorkspaceEntry>): WorkspaceEntry {
     entry.agent = source.agent;
   }
 
+  // 会話の id（#33）。**ペインと組で持つ** —— 題は重なり、ペインの id は
+  // 起動ごとに振り直されるので、どちらも会話を指す鍵にならない。
+  // 値があるときだけ載せるのは起動コマンドと同じ扱い
+  if (typeof source.sessionId === "string" && source.sessionId !== "") {
+    entry.sessionId = source.sessionId;
+  }
+
+  // 再開しない印（#33）。受付のような常駐は新しい会話で足りる
+  if (source.noResume === true) entry.noResume = true;
+
   return entry;
 }
 

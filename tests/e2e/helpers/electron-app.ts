@@ -145,6 +145,25 @@ export async function writtenTo(electronApp: ElectronApplication, index: number)
 }
 
 /**
+ * 流し込まれたコマンドを、**会話の id を伏せた形**で取り出す（#33）。
+ *
+ * 会話の id は起動のたびに違うので、そのままでは比べられない。伏せても
+ * 「付いていること」と「UUID の形であること」は確かめられる。
+ */
+export async function launchedIn(
+  electronApp: ElectronApplication,
+  index: number
+): Promise<string[]> {
+  const written = await writtenTo(electronApp, index);
+  return written.map((text) =>
+    text.replace(
+      / --session-id [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
+      " --session-id <uuid>"
+    )
+  );
+}
+
+/**
  * 現在のセッション一覧をメインプロセスから直接取得する。
  */
 export async function listSessions(electronApp: ElectronApplication): Promise<any[]> {
