@@ -209,3 +209,56 @@ test("同じディレクトリの 2 枚が、それぞれ自分の会話へ戻�
   expect(await logOf(0)).not.toContain(second);
   expect(await logOf(1)).not.toContain(first);
 });
+
+/**
+ * 復元で振り直した id を**保存する**（#33）。
+ *
+ * ここを忘れると、死んだ id が構成に残り続け、**毎回それを試して毎回
+ * 新しい会話で立てる** —— そのペインは永久に再開できない。
+ *
+ * **実機で見つかった。** 受付ペインだけ復元されず、他は通る、という形で
+ * 出た（受付の保存 id の記録が無かったため）。
+ */
+test("記録の無い id で立て直したら、新しい id を保存する", async () => {
+  const dead = "deaddead-1111-2222-3333-444444444444";
+
+  await launchWith([
+    { cwd: WORK, args: [], initialCommand: COMMAND, agent: "claude", sessionId: dead },
+  ]);
+  await waitForPaneCount(page, 1);
+  await expect.poll(() => logOf(0), { timeout: 15_000 }).toContain("--session-id");
+
+  // 構成に書かれた id が、立て直した後のものになっていること
+  await expect
+    .poll(
+      () => {
+        const saved = JSON.parse(fs.readFileSync(RESTORE_PATH, "utf8"));
+        return saved.sessions[0].sessionId;
+      },
+      { timeout: 10_000 }
+    )
+    .not.toBe(dead);
+
+  const saved = JSON.parse(fs.readFileSync(RESTORE_PATH, "utf8"));
+  expect(saved.sessions[0].sessionId).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+  );
+});
+
+/** 再開したペインは、その id を持ち続ける（振り直さない） */
+test("再開したペインの id は変わらない", async () => {
+  const id = "33333333-4444-5555-6666-777777777777";
+  const file = recordFile(WORK, id);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "{}\n", "utf8");
+  madeRecords.push(file);
+
+  await launchWith([
+    { cwd: WORK, args: [], initialCommand: COMMAND, agent: "claude", sessionId: id },
+  ]);
+  await waitForPaneCount(page, 1);
+  await expect.poll(() => logOf(0), { timeout: 15_000 }).toContain(compact(id));
+
+  const saved = JSON.parse(fs.readFileSync(RESTORE_PATH, "utf8"));
+  expect(saved.sessions[0].sessionId).toBe(id);
+});
