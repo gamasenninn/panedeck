@@ -124,6 +124,24 @@ test("demo", async () => {
   await emitPtyExit(electronApp, 3, 0);
 
   await wait(SETTLE);
+
+  // **映っているものを主張する。**
+  //
+  // ここが無いと、状態の呼び方が変わっても収録は通り続ける —— 実際そうなった:
+  // #27 で「入力待ち」が **指示待ち / 確認待ち** に分かれたのに、README の
+  // 説明は「2 つのバッジが入力待ちに変わる」のままで、**2 か月気づかなかった**
+  // （2026-10-05 発見）。gif が主張することは、ここでも主張させる。
+  const badges = page.locator("[data-testid=pane-status]");
+
+  // api-server (claude): [y/n] は確認の問い → 分けられる
+  await expect(badges.nth(0)).toHaveText("確認待ち");
+  // web-client (codex): 働き続けていて、静かになったところ
+  await expect(badges.nth(1)).toHaveText("待機");
+  // docs-site (claude): ❯ だけ。入力欄かダイアログか決められないので分けない
+  await expect(badges.nth(2)).toHaveText("入力待ち");
+  // infra (shell): 終わった
+  await expect(badges.nth(3)).toHaveText("終了");
+
   await wait(BEAT);
 
   // --- 入力待ちのペインだけに送る -------------------------------------------

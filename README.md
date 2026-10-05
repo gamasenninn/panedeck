@@ -12,7 +12,7 @@ Running a coding agent per repository means cycling through terminal tabs to fin
 
 It launches whatever command you give it, so any agent with a CLI can sit in a pane. Waiting-detection patterns ship for Claude Code and Codex.
 
-![Four panes running side by side. Two stop at a confirmation prompt and their badges turn to "waiting"; one Enter goes to those two alone and both carry on; one pane is then maximised and dropped back into the grid.](docs/demo.gif)
+![Four panes running side by side, each ending up in a different state: one stops at a confirmation and reads 確認待ち, one stops at its input box and reads 入力待ち, one is between jobs on 待機, and the shell pane has finished on 終了. One Enter reaches only the two that are waiting and both carry on; one pane is then maximised and dropped back into the grid.](docs/demo.gif)
 
 Recorded by `npm run demo`. The sessions are fakes from the test harness — real agents would put local paths and whatever happens to be in progress on screen, and would look different every take. The output fed to them does match the real detection patterns, so the badges are the detector's own verdict rather than a mock-up.
 
