@@ -46,11 +46,9 @@ jobs:
       # パッケージ版。開発では通るのにここだけ落ちる形を捕まえる
       - run: npm run test:packaged
 
-      # README の gif の収録。**主張があるので試験として働く** ——
-      # 状態の呼び方が変わったのに説明文が古いまま、を捕まえる（2 か月
-      # 気づかなかったことがある）。gif の書き出し（npm run demo の後半）は
-      # 手元のまま。23 秒
-      - run: npx playwright test --project=demo
+# ★ 収録（--project=demo）は CI に入れない。**実寸のウィンドウを描くので
+#   読み込みが終わらない**（入れてみて落ちた、2026-10-05）。gif が主張して
+#   いることは `tests/e2e/status-mix.spec.ts` が画面外で確かめる。
 
       # 落ちたときだけレポートを残す。E2E の失敗は手元で再現しにくい
       - uses: actions/upload-artifact@v5
