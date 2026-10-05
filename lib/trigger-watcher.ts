@@ -90,8 +90,15 @@ export interface TriggerWatcherDeps {
   now?: () => number;
   /** ファイルの読み取り。テストから差し替えられるように */
   readFile?: (file: string) => string;
-  /** ファイルの大きさ。無ければ null */
+  /** ファイルの大きさ（**文字数**）。追いかけ始める位置を決めるのに使う */
   sizeOf?: (file: string) => number | null;
+  /**
+   * ファイルのバイト数（#35）。**読まずに済ませるため**に使う。
+   *
+   * 文字数の `sizeOf` と別にしているのは、あちらが中身を読んで数えるから。
+   * ここは `stat` で足りる（マイクロ秒）。
+   */
+  byteSizeOf?: (file: string) => number | null;
 }
 
 /** 打ったが、まだ実行を確かめていない 1 通 */
@@ -119,6 +126,14 @@ interface Entry {
   readTo: number;
   held: string[];
   error: string;
+  /**
+   * 最後に見たバイト数（#35）。変わっていなければ読まない。
+   *
+   * **追記だけの queue なら、これで取りこぼさない。** 同じ大きさのまま
+   * 中身が入れ替わる書き方には気づけないが、それは以前の「短くなったら
+   * 入れ替わり」の判定でも拾えていなかった。
+   */
+  lastBytes: number | null;
   pending: Pending | null;
   /**
    * 諦めた後、ペインが動くまで打ち直さない。
@@ -137,6 +152,7 @@ export class TriggerWatcher {
   private now: () => number;
   private readFile: (file: string) => string;
   private sizeOf: (file: string) => number | null;
+  private byteSizeOf: (file: string) => number | null;
 
   constructor({
     findPane,
@@ -145,6 +161,7 @@ export class TriggerWatcher {
     now,
     readFile,
     sizeOf,
+    byteSizeOf,
   }: TriggerWatcherDeps) {
     this.findPane = findPane;
     this.typeInto = type;
@@ -156,6 +173,15 @@ export class TriggerWatcher {
       ((file) => {
         try {
           return fs.readFileSync(file, "utf8").length;
+        } catch {
+          return null;
+        }
+      });
+    this.byteSizeOf =
+      byteSizeOf ??
+      ((file) => {
+        try {
+          return fs.statSync(file).size;
         } catch {
           return null;
         }
@@ -176,6 +202,7 @@ export class TriggerWatcher {
       readTo: cursor ?? (size ?? 0),
       held: [],
       error: "",
+      lastBytes: null,
       pending: null,
       stuck: false,
     });
@@ -211,6 +238,15 @@ export class TriggerWatcher {
 
   /** 増えた行を保留へ移す。 */
   private collect(entry: Entry): void {
+    // **変わっていなければ読まない（#35）。** 以前は 300ms ごとに丸ごと
+    // 読み直していて、10 MB のファイルで 1 コアの 3.6% を常時使っていた。
+    // `stat` はマイクロ秒で済み、普段ファイルは変わらない。
+    //
+    // 大きさが取れないときは読みにいく —— 読めない理由を毎回出すため
+    const bytes = this.byteSizeOf(entry.config.watch);
+    if (bytes !== null && bytes === entry.lastBytes) return;
+    entry.lastBytes = bytes;
+
     let text: string;
     try {
       text = this.readFile(entry.config.watch);

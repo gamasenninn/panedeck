@@ -469,3 +469,95 @@ test.describe("実行を確かめてからカーソルを進める", () => {
     expect(watcher.cursors()[file]).toBe(0);
   });
 });
+
+/**
+ * 変わっていないファイルは読まない（#35）。
+ *
+ * 以前は 300ms ごとに**監視ファイルを丸ごと読み直して**いた。実測では
+ * 10 KB で 1 コアの 0.08%、1 MB で 0.50%、10 MB で 3.64% を**常時**使う。
+ * queue は追記だけなので、この数字は下がらない。
+ *
+ * 普段ファイルは変わらないので、**大きさを見て飛ばす**だけでほぼ消える。
+ */
+test.describe("変わっていなければ読まない", () => {
+  function countingSetup(file: string, options: Record<string, unknown> = {}) {
+    let reads = 0;
+    const base = setup({
+      readFile: (f: string) => {
+        reads += 1;
+        return fs.readFileSync(f, "utf8");
+      },
+      ...options,
+    });
+    return { ...base, reads: () => reads };
+  }
+
+  test("最初の 1 回は読む", () => {
+    const file = tempFile("one\n");
+    const { watcher, reads } = countingSetup(file);
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" }, 0);
+
+    watcher.check();
+    expect(reads()).toBe(1);
+  });
+
+  test("大きさが変わらなければ 2 回目は読まない", () => {
+    const file = tempFile("one\n");
+    const { watcher, reads } = countingSetup(file);
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" }, 0);
+
+    watcher.check();
+    watcher.check();
+    watcher.check();
+
+    expect(reads()).toBe(1);
+  });
+
+  test("増えたら読む", () => {
+    const file = tempFile("one\n");
+    const { watcher, reads, sent } = countingSetup(file);
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" }, 0);
+
+    watcher.check();
+    expect(reads()).toBe(1);
+
+    fs.appendFileSync(file, "two\n");
+    watcher.check();
+
+    expect(reads()).toBe(2);
+    // **読み飛ばしで行を落としていないこと。** 1 通目は確定待ちなので
+    // 2 通目はまだ出ない（それが正しい）。増えた行は保留に入っている
+    expect(sent.map((s) => s.text)).toEqual(["1"]);
+    expect(watcher.state()[0].held).toBe(2);
+  });
+
+  /** 入れ替わり（短くなる）も大きさが変わるので気づく */
+  test("短くなったら読み直す", () => {
+    const file = tempFile("one\ntwo\nthree\n");
+    const { watcher, reads, sent } = countingSetup(file);
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    watcher.check();
+    fs.writeFileSync(file, "fresh\n", "utf8");
+    watcher.check();
+
+    expect(reads()).toBeGreaterThanOrEqual(2);
+    expect(sent.map((s) => s.text)).toEqual(["1"]);
+  });
+
+  /** 読めないファイルは毎回報告する（黙らない） */
+  test("ファイルが無いときは、毎回理由を出す", () => {
+    const { watcher } = countingSetup("x", {
+      byteSizeOf: () => null,
+      readFile: () => {
+        throw new Error("無い");
+      },
+    });
+    watcher.add({ watch: "C:/no/such.jsonl", pane: { title: "a" }, send: "x" });
+
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("読めません");
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("読めません");
+  });
+});
