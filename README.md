@@ -284,6 +284,8 @@ A trigger covers the case where something on this machine writes the file. When 
 
 **The command's job is to write a file; a trigger watches the file.** Output is deliberately not piped into a pane: if PaneDeck stops after the command has received a line but before a pane has been told, the line is still in the file when it comes back. Piping straight into a pane would lose exactly those lines.
 
+Running PaneDeck on a different machine from the server that receives the messages changes only how a line reaches the local disk; everything after that is the same. [docs/remote-wakeup.md](docs/remote-wakeup.md) walks through it, including the one failure HTTP introduces that a local file cannot have — a connection that is down while the process is still alive.
+
 ## Project layout
 
 ```
