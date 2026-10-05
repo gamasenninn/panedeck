@@ -17,7 +17,7 @@ import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace"
 import { listProfiles, resolveProfile } from "./lib/agent-profiles";
 import { TriggerWatcher } from "./lib/trigger-watcher";
 import { createScreen } from "./lib/screen";
-import { resumePlan } from "./lib/resume-plan";
+import { resumePlan, shouldRetryFresh } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
 import { readSettings, updateSettings } from "./lib/settings";
@@ -246,14 +246,16 @@ function retryWithoutResume(id: string, exitCode: number): void {
   if (!pending) return;
   pendingResumes.delete(id);
 
-  // 長く走ってから落ちたのは普通の終了。立て直さない
-  if (Date.now() - pending.at > RESUME_FAILED_MS) return;
-  if (exitCode === 0) return;
+  // 判断は lib/ 側。ここは起こし直すだけ
+  if (!shouldRetryFresh({ exitCode, msSinceLaunch: Date.now() - pending.at })) return;
 
   try {
     sessionManager.close(id);
     // **新しい会話で。** 同じ id で起こし直しても、また同じ理由で落ちる
     sessionManager.create({ ...pending.entry, sessionId: undefined, resume: false });
+    // **振り直した id を残す（#33 と同じ穴）。** 残さないと、次の起動も
+    // 同じ死んだ id を試して失敗し、起動をまたいで永久に繰り返す
+    persistSessions();
   } catch {
     // 立て直せなくても、残りのペインは動かし続ける
   }
@@ -262,12 +264,8 @@ function retryWithoutResume(id: string, exitCode: number): void {
 /** 再開で起こしたペイン。落ちたら 1 回だけ立て直す */
 const pendingResumes = new Map<string, { entry: WorkspaceEntry; at: number }>();
 
-/**
- * 再開したペインが**すぐに**落ちたなら、再開の失敗とみなす。
- *
- * 長く走ってから落ちたのは普通の終了なので、立て直さない。
- */
-const RESUME_FAILED_MS = 10_000;
+// 「すぐ」の線引きは lib/resume-plan.ts（RESUME_FAILED_MS）。
+// 判断を 2 箇所に置かない
 
 /** OS 既定のシェル */
 function defaultShell(): string {

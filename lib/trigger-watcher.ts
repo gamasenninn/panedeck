@@ -245,7 +245,6 @@ export class TriggerWatcher {
     // 大きさが取れないときは読みにいく —— 読めない理由を毎回出すため
     const bytes = this.byteSizeOf(entry.config.watch);
     if (bytes !== null && bytes === entry.lastBytes) return;
-    entry.lastBytes = bytes;
 
     let text: string;
     try {
@@ -254,6 +253,11 @@ export class TriggerWatcher {
       entry.error = `ファイルを読めません: ${entry.config.watch}`;
       return;
     }
+
+    // **読めてから進める。** 読む前に進めると、大きさは取れるが読めない
+    // ファイル（権限・ロック）で次の回が飛ばされ、`check()` の頭で理由が
+    // 消される —— 300ms だけ出て、あとは黙ることになる
+    entry.lastBytes = bytes;
 
     // 短くなっていたら別のファイルに入れ替わったとみなし、先頭から読み直す。
     // 進んだままにすると、以後の行を永久に取りこぼす

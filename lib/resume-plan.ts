@@ -33,6 +33,32 @@ export interface ResumePlan {
 /** 新しい会話で始める */
 const FRESH: ResumePlan = { sessionId: undefined, resume: false };
 
+/**
+ * 再開で起こしたペインが、これより早く異常終了したら「再開の失敗」とみなす。
+ *
+ * 長く走ってから落ちたのは、ただの終了。
+ */
+export const RESUME_FAILED_MS = 10_000;
+
+/**
+ * 新しい会話で立て直すべきか（#33 の退避）。
+ *
+ * **「すぐ終了した」だけでは正常な終了と区別できない。** `node -e "..."` の
+ * ペインは設計どおり即終了し、`exited` はデッキが普通に見せる状態。だから
+ * 呼ぶ側が「再開で起こしたペイン」に限って使うこと —— ここはその中で
+ * 「異常終了」「すぐ」を見るだけ。
+ */
+export function shouldRetryFresh({
+  exitCode,
+  msSinceLaunch,
+}: {
+  exitCode: number;
+  msSinceLaunch: number;
+}): boolean {
+  if (exitCode === 0) return false;
+  return msSinceLaunch <= RESUME_FAILED_MS;
+}
+
 export function resumePlan({
   entry,
   profile,

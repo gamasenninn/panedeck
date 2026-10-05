@@ -561,3 +561,64 @@ test.describe("変わっていなければ読まない", () => {
     expect(watcher.state()[0].error).toContain("読めません");
   });
 });
+
+/**
+ * 読めないファイルは、毎回 理由を出し続ける（#35 の穴）。
+ *
+ * **大きさは取れるが読めない**ことがある（権限、ロック、途中で壊れた）。
+ * 読む前に「見た大きさ」を進めてしまうと、次の回は飛ばされ、`check()` の
+ * 頭で理由が消される —— **300ms だけ出て、あとは黙る**。
+ */
+test.describe("読めないファイルは黙らない", () => {
+  test("大きさは取れるが読めないとき、毎回 理由を出す", () => {
+    let reads = 0;
+    const { watcher } = setup({
+      byteSizeOf: () => 1234, // stat は通る
+      readFile: () => {
+        reads += 1;
+        throw new Error("権限がありません");
+      },
+    });
+    watcher.add({ watch: "C:/locked/queue.jsonl", pane: { title: "a" }, send: "x" });
+
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("読めません");
+
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("読めません");
+
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("読めません");
+
+    // 読みを飛ばしていないこと（飛ばすと理由が消える）
+    expect(reads).toBe(3);
+  });
+
+  /** 読めるようになったら、ちゃんと拾って以後は飛ばす */
+  test("読めるようになったら拾い、そのあとは飛ばす", () => {
+    let fail = true;
+    let reads = 0;
+    const { watcher, sent } = setup({
+      byteSizeOf: () => 4,
+      readFile: () => {
+        reads += 1;
+        if (fail) throw new Error("まだ読めない");
+        return "one\n";
+      },
+    });
+    watcher.add({ watch: "C:/x/queue.jsonl", pane: { title: "a" }, send: "{count}" }, 0);
+
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("読めません");
+
+    fail = false;
+    watcher.check();
+    expect(watcher.state()[0].error).toBe("");
+    expect(sent.map((s) => s.text)).toEqual(["1"]);
+
+    const before = reads;
+    watcher.check();
+    // 読めた後は、大きさが変わらない限り読まない
+    expect(reads).toBe(before);
+  });
+});

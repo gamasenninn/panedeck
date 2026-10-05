@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { resumePlan } from "../../lib/resume-plan";
+import {
+  resumePlan,
+  shouldRetryFresh,
+  RESUME_FAILED_MS,
+} from "../../lib/resume-plan";
 
 /**
  * 復元のときに、会話を再開するか新しく始めるかを決める（#33）。
@@ -104,5 +108,34 @@ test.describe("調べられないとき", () => {
     });
 
     expect(plan).toEqual({ sessionId: undefined, resume: false });
+  });
+});
+
+/**
+ * 再開に失敗したとみなすかの判断（#33 の退避）。
+ *
+ * **「すぐ終了した」を正常な終了と区別できない**のが難しいところ。
+ * `node -e "..."` のペインは設計どおり即終了し、`exited` はデッキが普通に
+ * 見せる状態。だから**再開で起こしたときだけ**、**異常終了で**、**すぐに**
+ * 落ちたものを失敗とみなす。
+ */
+test.describe("再開の失敗とみなすか", () => {
+  const W = RESUME_FAILED_MS;
+
+  test("再開で起こして、すぐ異常終了したら失敗とみなす", () => {
+    expect(shouldRetryFresh({ exitCode: 1, msSinceLaunch: 500 })).toBe(true);
+  });
+
+  test("正常終了は失敗とみなさない", () => {
+    expect(shouldRetryFresh({ exitCode: 0, msSinceLaunch: 500 })).toBe(false);
+  });
+
+  /** 長く走ってから落ちたのは、ただの終了 */
+  test("しばらく走ってから落ちたのは失敗とみなさない", () => {
+    expect(shouldRetryFresh({ exitCode: 1, msSinceLaunch: W + 1 })).toBe(false);
+  });
+
+  test("境界では失敗とみなす", () => {
+    expect(shouldRetryFresh({ exitCode: 1, msSinceLaunch: W })).toBe(true);
   });
 });

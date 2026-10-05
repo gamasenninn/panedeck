@@ -346,7 +346,10 @@ export class SessionManager {
   close(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;
-    session.pty.kill();
+    // **終了済みには触らない。** 死んだ ConPTY への操作は返ってこないことが
+    // あり、メインプロセスが固まる（#16 で resize に入れたのと同じ守り）。
+    // #33 の退避は「終了直後」に閉じるので、ここを通るのが日常になった
+    if (!session.exited) session.pty.kill();
     // 画面は行数ぶんの記憶を抱えるので、閉じたら必ず手放す
     this.screens.get(id)?.dispose();
     this.screens.delete(id);

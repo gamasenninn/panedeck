@@ -1011,3 +1011,38 @@ test.describe("会話の id", () => {
     expect(factory.created[0].written[0]).toBe("claude --continue\r");
   });
 });
+
+/**
+ * 終了済みのセッションに pty の操作をしない。
+ *
+ * #16 で `resize()` には守りを入れた —— 終了済みの ConPTY を resize すると
+ * **返ってこない**ことがあり、メインプロセスが固まった。`close()` には
+ * 同じ守りが無く、`kill()` を素通りで呼んでいた。
+ *
+ * **#33 の退避でこれが日常になった**: 再開に失敗したペインは「終了直後」に
+ * `close()` されるので、毎回 死んだ pty を kill することになる。
+ */
+test.describe("終了済みへの pty 操作", () => {
+  test("終了済みのセッションを閉じるとき kill しない", () => {
+    const { manager, ptyFactory } = setup();
+    const session = manager.create({ cwd: "a" });
+    const fake = ptyFactory.last()!;
+
+    fake.emitExit(1);
+    expect(manager.get(session.id)!.exited).toBe(true);
+
+    expect(manager.close(session.id)).toBe(true);
+    expect(fake.killed).toBe(false);
+    // 片付けそのものは済んでいること
+    expect(manager.get(session.id)).toBeNull();
+  });
+
+  test("生きているセッションは今までどおり kill する", () => {
+    const { manager, ptyFactory } = setup();
+    const session = manager.create({ cwd: "a" });
+    const fake = ptyFactory.last()!;
+
+    expect(manager.close(session.id)).toBe(true);
+    expect(fake.killed).toBe(true);
+  });
+});
