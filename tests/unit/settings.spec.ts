@@ -460,3 +460,48 @@ test.describe("services", () => {
     expect(services[0].command).toBe("一つ目");
   });
 });
+
+/**
+ * 同じファイルを見るトリガーは 1 つだけ（README の「1 つの queue に配る人は 1 人」）。
+ *
+ * **カーソルは監視パスを鍵に保存される**（`triggerCursors`）。同じファイルに
+ * 2 つのトリガーを置くと、どこまで届けたかを**互いに潰し合い**、再起動のたびに
+ * 片方の位置で両方が動く。配る人が 2 人になると、片方が進めた分をもう片方が
+ * 飛ばす —— サービスを名前で重複排除しているのと同じ理由。
+ */
+test.describe("トリガーの重複", () => {
+  test("同じファイルを見るものは最初の 1 つだけ残す", () => {
+    const triggers = normalizeSettings({
+      triggers: [
+        { watch: "C:/q/a.jsonl", pane: { title: "一枚目" }, send: "x" },
+        { watch: "C:/q/a.jsonl", pane: { title: "二枚目" }, send: "y" },
+      ],
+    }).triggers;
+
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0].pane.title).toBe("一枚目");
+  });
+
+  test("別のファイルなら両方残す", () => {
+    const triggers = normalizeSettings({
+      triggers: [
+        { watch: "C:/q/a.jsonl", pane: { title: "一枚目" }, send: "x" },
+        { watch: "C:/q/b.jsonl", pane: { title: "二枚目" }, send: "y" },
+      ],
+    }).triggers;
+
+    expect(triggers).toHaveLength(2);
+  });
+
+  /** 同じペインが複数のファイルを見るのは差し支えない（届く先が 1 つだから） */
+  test("同じペインが別のファイルを見るのは許す", () => {
+    const triggers = normalizeSettings({
+      triggers: [
+        { watch: "C:/q/a.jsonl", pane: { title: "受付" }, send: "x" },
+        { watch: "C:/q/b.jsonl", pane: { title: "受付" }, send: "y" },
+      ],
+    }).triggers;
+
+    expect(triggers).toHaveLength(2);
+  });
+});

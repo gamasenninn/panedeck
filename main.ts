@@ -354,11 +354,14 @@ function startTriggers(): void {
     // 進んだときだけ書く。毎周書くと設定ファイルを叩き続けることになる
     const now = JSON.stringify(triggerWatcher.cursors());
     if (now === saved) return;
-    saved = now;
     try {
       updateSettings(settingsPath(), { triggerCursors: JSON.parse(now) });
+      // **書けてから覚える。** 先に覚えると、失敗したときに二度と書き直さず、
+      // 設定には古いカーソルが残る —— 次の起動で**同じ便がもう一度配達される**。
+      // 覚えるのを後にすれば、次の周で書き直す
+      saved = now;
     } catch {
-      // 控えが残らないだけ。配達そのものは続ける
+      // 書けなかっただけ。配達そのものは続け、次の周でもう一度試す
     }
   }, TRIGGER_POLL_MS);
 }

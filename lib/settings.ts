@@ -166,10 +166,15 @@ export function normalizeSettings(raw: unknown): Settings {
       0,
       Number.MAX_SAFE_INTEGER
     ),
+    // **同じファイルを見るものは最初の 1 つだけ。** どこまで届けたかは
+    // 監視パスを鍵に保存するので（`triggerCursors`）、2 つ置くと互いに
+    // 潰し合い、再起動のたびに片方の位置で両方が動く。README の
+    // 「1 つの queue に配る人は 1 人」が、設定でも守られるようにする
     triggers: Array.isArray(source.triggers)
       ? source.triggers
           .map(normalizeTrigger)
           .filter((t): t is TriggerConfig => t !== null)
+          .filter((t, i, all) => all.findIndex((other) => other.watch === t.watch) === i)
       : DEFAULT_SETTINGS.triggers,
 
     triggerCursors: normalizeCursors(source.triggerCursors),

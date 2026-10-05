@@ -331,8 +331,14 @@ export class TriggerWatcher {
     const pending = entry.pending!;
     const pane = this.resolvePane(entry);
 
-    // 送り先が消えた。打った行を保留へ戻す（消さない）
-    if (!pane) {
+    // 送り先が消えた、または**打ち込んだのとは別のペイン**になっている。
+    //
+    // 題は付け替えられる（#28）ので、打った後にそのペインが閉じ、別のペインが
+    // 同じ題を名乗ることがある。そのペインが自分の仕事で動いているのを見て
+    // 「実行された」と取り違えると、**行が消える**。
+    //
+    // 打った行は保留へ戻す（消さない）
+    if (!pane || pane.id !== pending.paneId) {
       entry.held = [...pending.lines, ...entry.held];
       entry.pending = null;
       return;

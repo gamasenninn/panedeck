@@ -622,3 +622,57 @@ test.describe("読めないファイルは黙らない", () => {
     expect(reads).toBe(before);
   });
 });
+
+/**
+ * 実行の確認は、**打ち込んだそのペイン**で行う（#32 の抜け）。
+ *
+ * `progress()` は題でペインを引くが、打ったのは `pending.paneId`。打った後に
+ * そのペインが閉じ、**別のペインが同じ題を持った**場合、新しいペインが
+ * 動いているのを見て「実行された」と誤って判断し、**行が消える**。
+ *
+ * 題は付け替えられる（#28）ので、起こりうる。
+ */
+test.describe("確認は打ったペインで", () => {
+  test("同じ題の別のペインに入れ替わったら、行を保留へ戻す", () => {
+    const file = tempFile("");
+    let paneId = "s1";
+    let paneStatus = "ready";
+    const { watcher, advance } = setup({
+      // 題は同じまま、ペインの実体だけ入れ替わる
+      findPane: () => [{ id: paneId, title: "a", status: paneStatus }],
+    });
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, "one\ntwo\n");
+    watcher.check(); // s1 へ打つ
+    advance(SUBMIT_DELAY_MS);
+    watcher.check(); // s1 へ確定
+
+    // ここで s1 が閉じ、別のペインが題「a」を名乗る。
+    // **そのペインは自分の仕事で動いている** —— これを「実行された」と
+    // 取り違えると、行が消える
+    paneId = "s2";
+    paneStatus = "running";
+    watcher.check();
+
+    // 打ったのは s1。s2 が動いていても確認にしない
+    expect(watcher.cursors()[file]).toBe(0);
+    expect(watcher.state()[0].held).toBe(2);
+  });
+
+  test("同じペインのままなら、今までどおり確認できる", () => {
+    const file = tempFile("");
+    const { watcher, advance, setStatus } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, "one\ntwo\n");
+    watcher.check();
+    advance(SUBMIT_DELAY_MS);
+    watcher.check();
+
+    setStatus("running");
+    watcher.check();
+
+    expect(watcher.cursors()[file]).toBe(8);
+  });
+});
