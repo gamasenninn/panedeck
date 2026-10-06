@@ -60,13 +60,24 @@ export class EventLog {
       });
   }
 
-  /** その日のファイル。ペインの記録と同じく日付で分ける */
+  /**
+   * その日のファイル。ペインの記録と同じく日付で分ける。
+   *
+   * ★ **日の境目はローカルの深夜。** `log-writer` のファイル名もローカル時刻で
+   * 付くので、同じフォルダに並ぶ 2 種類が別の日で切れてはいけない。
+   *
+   * UTC で切ると、JST では `events-20261006.jsonl` が **10/6 09:00 〜 10/7 09:00**
+   * を抱える。朝に「今日」を読もうとして昨日の名前を開くことになり、
+   * **「後から 1 日を読む」という #36 の目的そのものが欠ける**。
+   *
+   * 行の中の `at` は UTC の ISO のまま。**瞬間は絶対で、束ね方だけがローカル。**
+   */
   private fileFor(at: number): string {
     const d = new Date(at);
     const stamp =
-      String(d.getUTCFullYear()) +
-      String(d.getUTCMonth() + 1).padStart(2, "0") +
-      String(d.getUTCDate()).padStart(2, "0");
+      String(d.getFullYear()) +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      String(d.getDate()).padStart(2, "0");
     return path.join(this.dir, `events-${stamp}.jsonl`);
   }
 
