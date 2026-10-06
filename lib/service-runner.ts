@@ -44,6 +44,15 @@ export interface ServiceRunnerDeps {
   now?: () => number;
   /** ログとして持つ最大文字数 */
   maxLogChars?: number;
+  /**
+   * 出来事を知らせる（#36）。
+   *
+   * **再起動の回数は、安定して動き出すと表示から消える**
+   * （`serviceSummary` は「再起動中」か「停止」のときだけ添える）。
+   * つまり**復帰そのものが証拠を消す**。夜中に 7 回落ちていたことを
+   * 朝に知るには、ここで残すしかない。
+   */
+  onEvent?: (event: { kind: string } & Record<string, unknown>) => void;
 }
 
 /**
@@ -80,12 +89,19 @@ export class ServiceRunner {
   private spawn: (command: string) => ServiceProcess;
   private now: () => number;
   private maxLogChars: number;
+  private onEvent: (event: { kind: string } & Record<string, unknown>) => void;
   private stopped = false;
 
-  constructor({ spawn, now = () => Date.now(), maxLogChars }: ServiceRunnerDeps) {
+  constructor({
+    spawn,
+    now = () => Date.now(),
+    maxLogChars,
+    onEvent,
+  }: ServiceRunnerDeps) {
     this.spawn = spawn;
     this.now = now;
     this.maxLogChars = maxLogChars ?? DEFAULT_MAX_LOG_CHARS;
+    this.onEvent = onEvent ?? (() => {});
   }
 
   start(configs: ServiceConfig[]): void {
@@ -114,6 +130,12 @@ export class ServiceRunner {
       if (this.now() < entry.restartAt) continue;
       entry.restartAt = null;
       this.launch(entry);
+      // **最初の起動は知らせない。** 落ちた後の起こし直しだけが出来事
+      this.onEvent({
+        kind: "service-start",
+        name: entry.config.name,
+        restarts: entry.restarts,
+      });
     }
   }
 
@@ -168,6 +190,13 @@ export class ServiceRunner {
     entry.restarts += 1;
     entry.status = "restarting";
     entry.restartAt = this.now() + wait;
+    this.onEvent({
+      kind: "service-exit",
+      name: entry.config.name,
+      exitCode: code,
+      restarts: entry.restarts,
+      waitMs: wait,
+    });
   }
 
   private append(entry: Entry, text: string): void {

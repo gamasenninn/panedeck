@@ -265,6 +265,20 @@ Whatever a trigger watches, exactly one thing may consume it. If a pane also wat
 
 So a pane fed by a trigger must not run its own watcher. Teams can differ — one on triggers, one on its own watching — as long as no single queue has two deliverers.
 
+#### What went wrong is written down
+
+The toolbar shows the present. It is recomputed every poll, so **recovering erases the evidence**: a service that fell over seven times overnight and then reconnected reads simply as running, and closing the app forgets even that.
+
+So the events are appended to `events-YYYYMMDD.jsonl` beside the pane logs, under the same retention. One line each, only when something changes:
+
+- a trigger that could not deliver, with the reason the toolbar gives — and a matching line when it clears, so you can see *when* it was fixed
+- a delivery, carrying **how long the oldest line waited** and how many Enters it took. A hold needs no event of its own: the wait is in the number
+- a delivery that was typed but never executed, after the retries gave up
+- a service exiting with its restart count, and the restart that follows
+- a pane resumed, or started fresh because its conversation had no record
+
+**Nothing is written per poll.** An unreachable pane would otherwise produce three lines a second; the reason is recorded once and again when it changes. A quiet day costs almost nothing, which is what makes the file worth reading.
+
 ### Keeping a command running (services)
 
 A trigger covers the case where something on this machine writes the file. When the source is remote, something local has to hold the connection and write what it receives — and that something, run inside an agent's pane, dies with the pane.

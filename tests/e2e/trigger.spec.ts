@@ -39,7 +39,13 @@ async function launchWith(triggers: unknown[]) {
   fs.writeFileSync(QUEUE, "", "utf8");
   fs.writeFileSync(
     SETTINGS_PATH,
-    JSON.stringify({ autoLog: false, autoRestore: false, triggers }),
+    JSON.stringify({
+      autoLog: false,
+      autoRestore: false,
+      // 出来事の記録もここへ（#36）。**実 userData を触らせない**
+      logDir: path.join(TEMP_DIR, "logs"),
+      triggers,
+    }),
     "utf8"
   );
 
@@ -166,4 +172,96 @@ test("送り先のペインが無いことが見える", async () => {
     "居ない係",
     { timeout: 10000 }
   );
+});
+
+/**
+ * 出来事がファイルに残ること（#36）。
+ *
+ * **ツールバーは「いま」を描くだけなので、直れば証拠が消え、閉じれば
+ * 全部消える。** 1 日動かした後に何が起きたかを読めるようにする。
+ */
+test("届け先が無いことがファイルに残る", async () => {
+  await launchWith([
+    { watch: QUEUE, pane: { title: "居ない受付" }, send: "新着 {count} 件" },
+  ]);
+  // ペインは作らない（届け先が無い状態）
+  fs.appendFileSync(QUEUE, '{"id":"m1"}\n', "utf8");
+
+  const eventsFile = () => {
+    const dir = path.join(TEMP_DIR, "logs");
+    if (!fs.existsSync(dir)) return null;
+    const f = fs.readdirSync(dir).find((n) => n.startsWith("events-"));
+    return f ? path.join(dir, f) : null;
+  };
+
+  await expect
+    .poll(
+      () => {
+        const file = eventsFile();
+        return file ? fs.readFileSync(file, "utf8") : "";
+      },
+      { timeout: 10_000 }
+    )
+    .toContain("trigger-error");
+
+  const rows = fs
+    .readFileSync(eventsFile()!, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  const error = rows.find((r) => r.kind === "trigger-error");
+  expect(String(error.reason)).toContain("ペインがありません");
+  expect(error.title).toBe("居ない受付");
+  expect(typeof error.at).toBe("string");
+
+  // **毎周は書かない。** 300ms ごとに書いたら読めない量になる
+  await page.waitForTimeout(2000);
+  const after = fs
+    .readFileSync(eventsFile()!, "utf8")
+    .trim()
+    .split("\n")
+    .filter((l) => l.includes("trigger-error"));
+  expect(after).toHaveLength(1);
+});
+
+test("届いたことが、待った時間つきで残る", async () => {
+  await launchWith([
+    { watch: QUEUE, pane: { title: "受付" }, send: "新着 {count} 件 last={id}" },
+  ]);
+  await givenPane("受付", READY_SCREEN);
+
+  fs.appendFileSync(QUEUE, '{"id":"m1"}\n', "utf8");
+
+  // 打たれたら、ペインが動いたことにする（確認が通る）
+  await expect
+    .poll(() => writtenTo(electronApp, 0), { timeout: 10_000 })
+    .toContain("\r");
+  // **画面を消してから**働いている様子を描く。`❯` と `mode on` が残って
+  // いると指示待ちのままで、確認が通らない（判定は画面を見る・#31）
+  await emitPtyData(electronApp, 0, "\x1b[2J\x1b[H● 作業しています…\r\n");
+  await advanceClock(electronApp, 1000);
+
+  const eventsDir = path.join(TEMP_DIR, "logs");
+  await expect
+    .poll(
+      () => {
+        const f = fs.readdirSync(eventsDir).find((n) => n.startsWith("events-"));
+        return f ? fs.readFileSync(path.join(eventsDir, f), "utf8") : "";
+      },
+      { timeout: 10_000 }
+    )
+    .toContain("delivery");
+
+  const f = fs.readdirSync(eventsDir).find((n) => n.startsWith("events-"))!;
+  const rows = fs
+    .readFileSync(path.join(eventsDir, f), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  const delivered = rows.find((r) => r.kind === "delivery");
+
+  expect(delivered.count).toBe(1);
+  expect(delivered.title).toBe("受付");
+  expect(typeof delivered.waitedMs).toBe("number");
+  expect(delivered.submits).toBeGreaterThanOrEqual(1);
 });

@@ -226,3 +226,77 @@ test.describe("後始末", () => {
     expect(spawn.spawned).toHaveLength(1);
   });
 });
+
+/**
+ * 出来事を知らせる（#36）。
+ *
+ * **これが無いと、夜中に落ち続けていたことが朝には分からない。**
+ * 再起動の回数は表示に出るが、**安定して動き出すと表示から消える**
+ * （`serviceSummary` は「再起動中」か「停止」のときだけ回数を添える）。
+ * つまり**復帰そのものが証拠を消す**。
+ */
+test.describe("出来事を知らせる", () => {
+  function withEvents() {
+    const events: Array<Record<string, unknown>> = [];
+    const spawn = createFakeSpawner();
+    let clock = 1000;
+    const runner = new ServiceRunner({
+      spawn,
+      now: () => clock,
+      onEvent: (e: Record<string, unknown>) => events.push(e),
+    });
+    return {
+      runner,
+      spawn,
+      events,
+      advance: (ms: number) => (clock += ms),
+    };
+  }
+
+  test("落ちたことを、回数つきで知らせる", () => {
+    const { runner, spawn, events, advance } = withEvents();
+    runner.start([{ name: "feed", command: "node x.js" }]);
+
+    spawn.spawned[0].emitExit(1);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      kind: "service-exit",
+      name: "feed",
+      exitCode: 1,
+      restarts: 1,
+    });
+
+    advance(BACKOFF_STEPS[0]);
+    runner.tick();
+
+    const starts = events.filter((e) => e.kind === "service-start");
+    expect(starts).toHaveLength(1);
+    expect(starts[0]).toMatchObject({ name: "feed", restarts: 1 });
+  });
+
+  test("最初の起動は知らせない（落ちた後だけ）", () => {
+    const { runner, events } = withEvents();
+    runner.start([{ name: "feed", command: "node x.js" }]);
+
+    expect(events).toEqual([]);
+  });
+
+  test("止めたときは落ちたことにしない", () => {
+    const { runner, spawn, events } = withEvents();
+    runner.start([{ name: "feed", command: "node x.js" }]);
+
+    runner.stopAll();
+    spawn.spawned[0].emitExit(0);
+
+    expect(events.filter((e) => e.kind === "service-exit")).toEqual([]);
+  });
+
+  test("知らせ先を渡さなくても動く", () => {
+    const spawn = createFakeSpawner();
+    const runner = new ServiceRunner({ spawn });
+    runner.start([{ name: "feed", command: "node x.js" }]);
+
+    expect(() => spawn.spawned[0].emitExit(1)).not.toThrow();
+  });
+});

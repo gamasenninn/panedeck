@@ -99,6 +99,14 @@ export interface TriggerWatcherDeps {
    * ここは `stat` で足りる（マイクロ秒）。
    */
   byteSizeOf?: (file: string) => number | null;
+  /**
+   * 出来事を知らせる（#36）。
+   *
+   * ツールバーは「いま」を描くだけなので、**直れば証拠が消え、閉じれば
+   * 全部消える**。後から読めるように、**変わった瞬間だけ**を外へ出す。
+   * 毎周の状態は出さない（300ms × 枚数を書けば読めない量になる）。
+   */
+  onEvent?: (event: { kind: string } & Record<string, unknown>) => void;
 }
 
 /** 打ったが、まだ実行を確かめていない 1 通 */
@@ -106,6 +114,8 @@ interface Pending {
   paneId: string;
   /** 諦めるときに保留へ戻すための元の行 */
   lines: string[];
+  /** いちばん古い行が積まれた時刻。**保留の長さがここから出る**（#36） */
+  heldSince: number;
   typedAt: number;
   /** 確定を送った時刻。まだなら null */
   submittedAt: number | null;
@@ -125,7 +135,11 @@ interface Entry {
    */
   readTo: number;
   held: string[];
+  /** いちばん古い保留が積まれた時刻（#36）。空になったら消す */
+  heldSince: number | null;
   error: string;
+  /** 前回知らせた理由。**変わったときだけ**知らせるため（#36） */
+  reported: string;
   /**
    * 最後に見たバイト数（#35）。変わっていなければ読まない。
    *
@@ -153,6 +167,7 @@ export class TriggerWatcher {
   private readFile: (file: string) => string;
   private sizeOf: (file: string) => number | null;
   private byteSizeOf: (file: string) => number | null;
+  private onEvent: (event: { kind: string } & Record<string, unknown>) => void;
 
   constructor({
     findPane,
@@ -162,7 +177,9 @@ export class TriggerWatcher {
     readFile,
     sizeOf,
     byteSizeOf,
+    onEvent,
   }: TriggerWatcherDeps) {
+    this.onEvent = onEvent ?? (() => {});
     this.findPane = findPane;
     this.typeInto = type;
     this.submitTo = submit;
@@ -201,7 +218,9 @@ export class TriggerWatcher {
       cursor: cursor ?? (size ?? 0),
       readTo: cursor ?? (size ?? 0),
       held: [],
+      heldSince: null,
       error: "",
+      reported: "",
       lastBytes: null,
       pending: null,
       stuck: false,
@@ -215,6 +234,34 @@ export class TriggerWatcher {
       this.collect(entry);
       if (entry.pending) this.progress(entry);
       else this.deliver(entry);
+      this.reportError(entry);
+    }
+  }
+
+  /**
+   * 理由が**変わったときだけ**知らせる（#36）。
+   *
+   * 届け先が無い状態は 300ms ごとに続くので、毎周出したら読めない量になる。
+   * 直ったことも 1 行出す —— そうしないと「いつ直ったか」が分からない。
+   */
+  private reportError(entry: Entry): void {
+    if (entry.error === entry.reported) return;
+    const was = entry.reported;
+    entry.reported = entry.error;
+
+    if (entry.error !== "") {
+      this.onEvent({
+        kind: "trigger-error",
+        watch: entry.config.watch,
+        title: entry.config.pane.title,
+        reason: entry.error,
+      });
+    } else if (was !== "") {
+      this.onEvent({
+        kind: "trigger-ok",
+        watch: entry.config.watch,
+        title: entry.config.pane.title,
+      });
     }
   }
 
@@ -271,7 +318,12 @@ export class TriggerWatcher {
     if (added === "") return;
 
     for (const line of added.split(/\r?\n/)) {
-      if (line.trim() !== "") entry.held.push(line);
+      if (line.trim() !== "") {
+        // **いちばん古い行の時刻だけ覚える。** 配達の行に「どれだけ待ったか」
+        // を入れれば、保留そのものを出来事にしなくて済む（#36）
+        if (entry.heldSince === null) entry.heldSince = this.now();
+        entry.held.push(line);
+      }
     }
   }
 
@@ -317,11 +369,19 @@ export class TriggerWatcher {
     entry.pending = {
       paneId: pane.id,
       lines,
+      heldSince: entry.heldSince ?? this.now(),
       typedAt: this.now(),
       submittedAt: null,
       submits: 0,
     };
+    entry.heldSince = null;
     this.typeInto(pane.id, text);
+    this.onEvent({
+      kind: "typed",
+      watch: entry.config.watch,
+      title: entry.config.pane.title,
+      count: lines.length,
+    });
   }
 
   /**
@@ -340,6 +400,7 @@ export class TriggerWatcher {
     // 打った行は保留へ戻す（消さない）
     if (!pane || pane.id !== pending.paneId) {
       entry.held = [...pending.lines, ...entry.held];
+      entry.heldSince = pending.heldSince;
       entry.pending = null;
       return;
     }
@@ -356,6 +417,16 @@ export class TriggerWatcher {
     // ペインが動いた＝実行された。ここで初めてカーソルを進める
     if (pane.status !== DELIVERABLE) {
       entry.cursor = entry.readTo;
+      this.onEvent({
+        kind: "delivery",
+        watch: entry.config.watch,
+        title: entry.config.pane.title,
+        count: pending.lines.length,
+        // **保留の有無と長さが、この 1 行で分かる**
+        waitedMs: this.now() - pending.heldSince,
+        // 押し直しで助かったなら、それもここに出る（#32）
+        submits: pending.submits,
+      });
       entry.pending = null;
       return;
     }
@@ -372,8 +443,16 @@ export class TriggerWatcher {
 
     // 諦める。**行は保留へ戻す**（送ったことにして消さない）
     entry.held = [...pending.lines, ...entry.held];
+    entry.heldSince = pending.heldSince;
     entry.pending = null;
     entry.stuck = true;
+    this.onEvent({
+      kind: "not-executed",
+      watch: entry.config.watch,
+      title: entry.config.pane.title,
+      count: pending.lines.length,
+      submits: pending.submits,
+    });
     entry.error = `実行されませんでした。入力欄を片付けてください: ${entry.config.pane.title}`;
   }
 }

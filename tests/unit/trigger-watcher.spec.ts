@@ -676,3 +676,129 @@ test.describe("確認は打ったペインで", () => {
     expect(watcher.cursors()[file]).toBe(8);
   });
 });
+
+/**
+ * 出来事を知らせる（#36）。
+ *
+ * ツールバーは「いま」を描くだけなので、**直れば証拠が消える**。後から
+ * 読めるように、変わった瞬間だけを外へ出す。
+ *
+ * ★ **毎周は出さない。** 届け先が無い状態は 300ms ごとに続くので、
+ * 出し続けたら読めない量になる。**理由が変わったときだけ。**
+ */
+test.describe("出来事を知らせる", () => {
+  function withEvents(options: Record<string, unknown> = {}) {
+    const events: Array<Record<string, unknown>> = [];
+    const base = setup({ onEvent: (e: Record<string, unknown>) => events.push(e), ...options });
+    return { ...base, events, kinds: () => events.map((e) => e.kind) };
+  }
+
+  test("届いたら知らせる。待った時間も添える", () => {
+    const file = tempFile("");
+    const { watcher, events, advance, setStatus } = withEvents();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    // 作業中に 2 行増える（保留される）
+    setStatus("running");
+    fs.appendFileSync(file, "one\ntwo\n");
+    watcher.check();
+    expect(events).toEqual([]); // 保留そのものは出来事にしない
+
+    // 10 秒待って、動けるようになった
+    advance(10_000);
+    setStatus("ready");
+    watcher.check();
+    advance(SUBMIT_DELAY_MS);
+    watcher.check();
+    setStatus("running");
+    watcher.check();
+
+    const delivered = events.filter((e) => e.kind === "delivery");
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0].count).toBe(2);
+    expect(delivered[0].title).toBe("a");
+    // **保留の有無と長さが、この 1 行で分かる**
+    expect(delivered[0].waitedMs).toBeGreaterThanOrEqual(10_000);
+    expect(delivered[0].submits).toBe(1);
+  });
+
+  test("届け先が無いことを 1 度だけ知らせる", () => {
+    const file = tempFile("");
+    const { watcher, events } = withEvents();
+    watcher.add({ watch: file, pane: { title: "missing" }, send: "x" });
+
+    fs.appendFileSync(file, "one\n");
+    watcher.check();
+    watcher.check();
+    watcher.check();
+
+    const errors = events.filter((e) => e.kind === "trigger-error");
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0].reason)).toContain("ペインがありません");
+  });
+
+  test("理由が消えたことも知らせる（直ったと分かる）", () => {
+    const file = tempFile("");
+    let title = "missing";
+    const { watcher, events } = withEvents({
+      findPane: (t: string) => (title === "missing" ? [] : [{ id: "s1", title: t, status: "ready" }]),
+    });
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, "one\n");
+    watcher.check();
+    expect(events.map((e) => e.kind)).toEqual(["trigger-error"]);
+
+    title = "a";
+    watcher.check();
+
+    // 打つのと「直った」は**同じ周**に起きるので、その中の順序に意味は無い
+    expect(events.map((e) => e.kind)).toEqual(["trigger-error", "typed", "trigger-ok"]);
+  });
+
+  test("打ったのに実行されず諦めたことを知らせる", () => {
+    const file = tempFile("");
+    const { watcher, events, advance } = withEvents();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, "one\n");
+    watcher.check();
+    for (let i = 0; i < MAX_SUBMITS + 2; i++) {
+      advance(Math.max(SUBMIT_DELAY_MS, CONFIRM_MS));
+      watcher.check();
+    }
+
+    const gave = events.filter((e) => e.kind === "not-executed");
+    expect(gave).toHaveLength(1);
+    expect(gave[0].submits).toBe(MAX_SUBMITS);
+  });
+
+  /** 押し直しで助かったなら、それも分かるようにする */
+  test("押し直して届いたら、その回数が配達の行に出る", () => {
+    const file = tempFile("");
+    const { watcher, events, advance, setStatus } = withEvents();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, "one\n");
+    watcher.check();
+    advance(SUBMIT_DELAY_MS);
+    watcher.check(); // 1 回目の確定
+    advance(CONFIRM_MS);
+    watcher.check(); // 押し直し
+    setStatus("running");
+    watcher.check(); // 動いた
+
+    const delivered = events.filter((e) => e.kind === "delivery");
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0].submits).toBe(2);
+  });
+
+  test("知らせ先を渡さなくても動く", () => {
+    const file = tempFile("");
+    const { watcher, runHandshake } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, "one\n");
+    expect(() => runHandshake()).not.toThrow();
+  });
+});

@@ -22,6 +22,7 @@ import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
+import { EventLog } from "./lib/event-log";
 import { cleanupLogs } from "./lib/log-retention";
 
 let mainWindow: BrowserWindow | null = null;
@@ -112,6 +113,21 @@ const LOG_FLUSH_MS = 300;
  * 同じ周期で素直に見にいくほうが、取りこぼさないぶん確か。
  */
 const TRIGGER_POLL_MS = 300;
+
+/**
+ * 出来事の記録（#36）。
+ *
+ * ペインの記録と**同じ場所・同じ索引**に置くので、保持期間の片付けに乗る。
+ * 書けなくても配達は続ける（`EventLog` が投げない）。
+ */
+let eventLog: EventLog | null = null;
+
+function events(): EventLog {
+  if (!eventLog) {
+    eventLog = new EventLog({ dir: logDir(), indexPath: logIndexPath() });
+  }
+  return eventLog;
+}
 
 /** 設定にトリガーが無ければ null のまま */
 let triggerWatcher: TriggerWatcher | null = null;
@@ -222,6 +238,13 @@ function openFromEntry(entry: WorkspaceEntry): Session {
   const session = sessionManager.create({ ...entry, ...plan });
   // 再開で起こしたものだけ、落ちたときの立て直しを見張る
   if (plan.resume) watchResume(session.id, entry);
+  // どちらで起こしたかを残す（#36）。会話が新しくなった理由が後から分かる
+  events().write({
+    kind: plan.resume ? "resumed" : "fresh-conversation",
+    title: session.title,
+    sessionId: session.sessionId ?? null,
+    savedId: entry.sessionId ?? null,
+  });
   return session;
 }
 
@@ -253,6 +276,12 @@ function retryWithoutResume(id: string, exitCode: number): void {
     sessionManager.close(id);
     // **新しい会話で。** 同じ id で起こし直しても、また同じ理由で落ちる
     sessionManager.create({ ...pending.entry, sessionId: undefined, resume: false });
+    events().write({
+      kind: "resume-failed",
+      title: pending.entry.title ?? null,
+      savedId: pending.entry.sessionId ?? null,
+      exitCode,
+    });
     // **振り直した id を残す（#33 と同じ穴）。** 残さないと、次の起動も
     // 同じ死んだ id を試して失敗し、起動をまたいで永久に繰り返す
     persistSessions();
@@ -340,6 +369,9 @@ function startTriggers(): void {
     // 間隔と押し直しは TriggerWatcher が時計で決める
     type: (id, text) => sessionManager.write(id, text),
     submit: (id) => sessionManager.write(id, "\r"),
+    // **見せるだけでは残らない（#36）。** ツールバーは「いま」を描くだけで、
+    // 直れば証拠が消え、閉じれば全部消える
+    onEvent: (event) => events().write(event),
   });
 
   for (const trigger of settings.triggers) {
@@ -376,7 +408,11 @@ function startServices(): void {
   const settings = readSettings(settingsPath());
   if (settings.services.length === 0) return;
 
-  serviceRunner = new ServiceRunner({ spawn: spawnService });
+  serviceRunner = new ServiceRunner({
+    spawn: spawnService,
+    // 復帰すると表示から消えるので、ここで残す（#36）
+    onEvent: (event) => events().write(event),
+  });
   serviceRunner.start(settings.services);
   setInterval(() => serviceRunner?.tick(), SERVICE_TICK_MS);
 }
