@@ -7,6 +7,7 @@ import {
   SUBMIT_DELAY_MS,
   CONFIRM_MS,
   MAX_SUBMITS,
+  PARTIAL_WARN_MS,
 } from "../../lib/trigger-watcher";
 
 /**
@@ -479,6 +480,156 @@ test.describe("実行を確かめてからカーソルを進める", () => {
  *
  * 普段ファイルは変わらないので、**大きさを見て飛ばす**だけでほぼ消える。
  */
+/**
+ * **1 行は改行で終わって初めて 1 行**（受付の指摘・2026-10-07）。
+ *
+ * 増えた分をそのまま改行で切ると、**書き手が 1 行を 2 回に分けて書いた瞬間**に
+ * ポーリングが挟まり、1 件が「前半」「後半」の 2 件に割れて配られる。前半は
+ * JSON として読めないので `{id}` が取れない。
+ *
+ * ★ Tealus の queue は agent-server が 1 回で書くので踏んでいなかった。
+ * **郵便受け（#34）で書き手が CI・スクリプト・人の手に広がると踏みやすくなる** ——
+ * 「誰でも 1 行書けば届く」が売りなのだから、割れ方の責任は受け取る側にある。
+ */
+test.describe("改行で終わった行だけを 1 件にする", () => {
+  /** 1 行ぶんの文字列を、途中で切れる形で用意する */
+  const LINE = '{"id":"m1","subject":"ビルド完了"}\n';
+  const HEAD = LINE.slice(0, 12);
+  const TAIL = LINE.slice(12);
+
+  test("改行で終わっていない断片は配らない", () => {
+    const file = tempFile("");
+    const { watcher, sent } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "新着 {count} 件" });
+
+    fs.appendFileSync(file, HEAD);
+    watcher.check();
+
+    expect(sent).toEqual([]);
+  });
+
+  test("後半が届いたら 1 件として配る（2 件に割れない）", () => {
+    const file = tempFile("");
+    const { watcher, sent } = setup();
+    watcher.add({
+      watch: file,
+      pane: { title: "a" },
+      send: "新着 {count} 件（最新 id={id}）",
+    });
+
+    fs.appendFileSync(file, HEAD);
+    watcher.check();
+    fs.appendFileSync(file, TAIL);
+    watcher.check();
+
+    expect(sent).toEqual([
+      { title: "s1", text: "新着 1 件（最新 id=m1）" },
+    ]);
+  });
+
+  /** 断片を抱えていても、その前にある完全な行は止めない */
+  test("完全な行は、後ろに断片があっても配る", () => {
+    const file = tempFile("");
+    const { watcher, sent } = setup();
+    watcher.add({
+      watch: file,
+      pane: { title: "a" },
+      send: "新着 {count} 件（最新 id={id}）",
+    });
+
+    fs.appendFileSync(file, '{"id":"m0"}\n' + HEAD);
+    watcher.check();
+
+    expect(sent).toEqual([
+      { title: "s1", text: "新着 1 件（最新 id=m0）" },
+    ]);
+  });
+
+  /**
+   * ★ #35（変わっていなければ読まない）と噛み合うこと。
+   *
+   * 断片で止めた回に `readTo` を進めてしまうと、**大きさが変わるまで読まない**
+   * 仕組みと合わさって、断片が永久に捨てられる。進めていないので、次に伸びた
+   * ときに前半ごと読み直せる。
+   */
+  /**
+   * ★ **完成しない断片は黙って抱えない。**
+   *
+   * 書き手が改行を書かずに止まると（落ちた・そういう書き方をしている）、
+   * 便は永久に届かない。#35 のおかげで読み直しもしないので、**何も起きない
+   * まま静かに待つ**ことになる。それは「届かない理由が見えない」という
+   * #36 で潰したはずの形なので、しばらく待っても完成しなければ理由を出す。
+   *
+   * 普通に分かれて書かれた行は数百ミリ秒で完成するので、ここには掛からない。
+   */
+  test("完成しない断片は、しばらく経てば理由が出る", () => {
+    const file = tempFile("");
+    const { watcher, advance } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, HEAD);
+    watcher.check();
+    expect(watcher.state()[0].error).toBe("");
+
+    advance(PARTIAL_WARN_MS);
+    watcher.check();
+
+    expect(watcher.state()[0].error).toContain("改行");
+  });
+
+  test("すぐ完成すれば理由は出ない", () => {
+    const file = tempFile("");
+    const { watcher, advance } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, HEAD);
+    watcher.check();
+    advance(300);
+    fs.appendFileSync(file, TAIL);
+    watcher.check();
+
+    expect(watcher.state()[0].error).toBe("");
+  });
+
+  test("完成したら理由は消える", () => {
+    const file = tempFile("");
+    const events: Array<Record<string, unknown>> = [];
+    const { watcher, advance } = setup({
+      onEvent: (e: Record<string, unknown>) => events.push(e),
+    });
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count}" });
+
+    fs.appendFileSync(file, HEAD);
+    watcher.check();
+    advance(PARTIAL_WARN_MS);
+    watcher.check();
+    fs.appendFileSync(file, TAIL);
+    watcher.check();
+
+    // 配達は確定と確認を経てからなので、ここには出ない（出るのは打ったこと）
+    expect(events.map((e) => e.kind)).toEqual([
+      "trigger-error",
+      "typed",
+      "trigger-ok",
+    ]);
+    expect(watcher.state()[0].error).toBe("");
+  });
+
+  test("断片で止めた回は読んだ位置を進めない", () => {
+    const file = tempFile("");
+    const { watcher, sent } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+
+    fs.appendFileSync(file, HEAD);
+    watcher.check();
+    watcher.check(); // 大きさが変わらないので読まない回
+    fs.appendFileSync(file, TAIL);
+    watcher.check();
+
+    expect(sent.map((x) => x.text)).toEqual(["m1"]);
+  });
+});
+
 test.describe("変わっていなければ読まない", () => {
   function countingSetup(file: string, options: Record<string, unknown> = {}) {
     let reads = 0;

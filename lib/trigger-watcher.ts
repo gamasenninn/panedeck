@@ -36,6 +36,14 @@ import { renderTemplate, templateValues } from "./trigger-template";
 const DELIVERABLE = "ready";
 
 /**
+ * 改行で終わらない断片を、理由として出すまでの猶予。
+ *
+ * 書き手が 1 行を 2 回に分けて書くのは普通のことで、数百ミリ秒で完成する。
+ * **完成しないまま止まったときだけ**出したいので、十分に長く取る。
+ */
+export const PARTIAL_WARN_MS = 10_000;
+
+/**
  * 文面を打ってから確定の CR を送るまでの間隔 (ms)。
  *
  * 貼り付けと見なされる窓を越えるため。実測で 0ms は 0/4、500ms は 4/4。
@@ -148,6 +156,13 @@ interface Entry {
    * 入れ替わり」の判定でも拾えていなかった。
    */
   lastBytes: number | null;
+  /**
+   * 改行で終わらない断片を抱え始めた時刻。無ければ null。
+   *
+   * **黙って抱えないため**だけに持つ。#35 で「変わっていなければ読まない」
+   * ので、断片のまま止まった書き手は**何も起きないまま静かに待たれる**。
+   */
+  partialSince: number | null;
   pending: Pending | null;
   /**
    * 諦めた後、ペインが動くまで打ち直さない。
@@ -222,6 +237,7 @@ export class TriggerWatcher {
       error: "",
       reported: "",
       lastBytes: null,
+      partialSince: null,
       pending: null,
       stuck: false,
     });
@@ -234,8 +250,23 @@ export class TriggerWatcher {
       this.collect(entry);
       if (entry.pending) this.progress(entry);
       else this.deliver(entry);
+      this.reportPartial(entry);
       this.reportError(entry);
     }
+  }
+
+  /**
+   * 完成しない断片を抱えていることを理由にする。
+   *
+   * **ここは毎周走らないといけない。** `collect()` は大きさが変わらなければ
+   * 先頭で戻るので（#35）、断片のまま止まった書き手の回には入ってこない。
+   *
+   * 他に理由があるときは譲る —— 届け先が無いほうが、人にとって直せる話。
+   */
+  private reportPartial(entry: Entry): void {
+    if (entry.error !== "" || entry.partialSince === null) return;
+    if (this.now() - entry.partialSince < PARTIAL_WARN_MS) return;
+    entry.error = `行が改行で終わっていません（続きを待っています）: ${entry.config.watch}`;
   }
 
   /**
@@ -314,10 +345,28 @@ export class TriggerWatcher {
     }
 
     const added = text.slice(entry.readTo);
-    entry.readTo = text.length;
     if (added === "") return;
 
-    for (const line of added.split(/\r?\n/)) {
+    // **1 行は改行で終わって初めて 1 行。** 増えた分をそのまま切ると、書き手が
+    // 1 行を 2 回に分けて書いた瞬間に挟まったポーリングが、1 件を「前半」
+    // 「後半」の 2 件に割って配る。前半は JSON として読めないので id が取れない。
+    //
+    // だから**最後の改行より後ろは読んだことにしない**。次の回に回す。
+    // ★ `readTo` を進めないことが肝で、進めると #35（変わっていなければ
+    // 読まない）と合わさって断片が永久に捨てられる。
+    const lastBreak = added.lastIndexOf("\n");
+    if (lastBreak === -1) {
+      entry.partialSince ??= this.now();
+      return;
+    }
+
+    const complete = added.slice(0, lastBreak + 1);
+    entry.readTo += lastBreak + 1;
+    // 後ろにまだ断片が残っていれば抱えたまま。**いちばん古い時刻を保つ**
+    entry.partialSince =
+      entry.readTo < text.length ? entry.partialSince ?? this.now() : null;
+
+    for (const line of complete.split(/\r?\n/)) {
       if (line.trim() !== "") {
         // **いちばん古い行の時刻だけ覚える。** 配達の行に「どれだけ待ったか」
         // を入れれば、保留そのものを出来事にしなくて済む（#36）
