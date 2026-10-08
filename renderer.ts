@@ -74,6 +74,9 @@ const logMaxTotalMbEl = document.getElementById(
 const autoLogIndicatorEl = document.getElementById("auto-log-indicator")!;
 const settingsBackdropEl = document.getElementById("settings-backdrop")!;
 const triggerErrorEl = document.getElementById("trigger-error")!;
+const triggerReleaseEl = document.getElementById("trigger-release") as HTMLButtonElement;
+/** 上限で止まっているトリガー。解除のボタンが押されたらまとめて戻す */
+let cappedWatches: string[] = [];
 const serviceStatusEl = document.getElementById("service-status")!;
 const serviceBackdropEl = document.getElementById("service-backdrop")!;
 const serviceListEl = document.getElementById("service-list")!;
@@ -575,6 +578,10 @@ function applyTriggers(states: TriggerState[]) {
   const errors = states.filter((state) => state.error !== "");
   triggerErrorEl.textContent = errors.map((state) => state.error).join(" / ");
   triggerErrorEl.hidden = errors.length === 0;
+
+  // **自動では戻さない。** 止めたことが見え、人が押して初めて再開する（#34 の ③）
+  cappedWatches = states.filter((state) => state.capped).map((state) => state.watch);
+  triggerReleaseEl.hidden = cappedWatches.length === 0;
 }
 
 /**
@@ -915,6 +922,11 @@ async function sendKey(key: string) {
 document.getElementById("add-session")!.addEventListener("click", addSession);
 
 document.getElementById("broadcast-send")!.addEventListener("click", sendBroadcast);
+
+triggerReleaseEl.addEventListener("click", async () => {
+  for (const watch of cappedWatches) await api.releaseTrigger(watch);
+  triggerReleaseEl.hidden = true;
+});
 
 broadcastInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") sendBroadcast();

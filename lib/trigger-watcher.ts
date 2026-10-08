@@ -30,7 +30,12 @@
 
 import fs from "fs";
 
+import type { TriggerConfig, TriggerState } from "../types/panedeck";
 import { idProblem, renderTemplate, templateValues } from "./trigger-template";
+
+// 形は types/panedeck.d.ts に 1 つだけ置く。ここで二重に持つと、片方だけ
+// 直したときにずれる（#34 の上限を足したときに実際にずれた）
+export type { TriggerConfig, TriggerState };
 
 /** 送ってよい状態。**指示待ちだけ**（#27） */
 const DELIVERABLE = "ready";
@@ -63,29 +68,12 @@ export const CONFIRM_MS = 4_000;
 /** CR を押す回数の上限。これを越えたら諦めて、保留に戻して人に知らせる */
 export const MAX_SUBMITS = 3;
 
-export interface TriggerConfig {
-  /** 監視するファイル */
-  watch: string;
-  /** 送り先のペイン。題で指定する（作業ディレクトリは複数のペインで重なる） */
-  pane: { title: string };
-  /** 送る文面のひな型。`{count}` と、最後の行の最上位フィールドが使える */
-  send: string;
-}
-
 export interface PaneRef {
   id: string;
   title: string;
   status: string;
 }
 
-export interface TriggerState {
-  watch: string;
-  title: string;
-  /** まだ届いていない行数（打った直後の確認中も含む） */
-  held: number;
-  /** 届けられない理由。無ければ空 */
-  error: string;
-}
 
 export interface TriggerWatcherDeps {
   /** 題に当たるペインをすべて返す */
@@ -171,6 +159,15 @@ interface Entry {
    * そちらで消す。記録（`trigger-rejected`）には 1 件ずつ残る
    */
   rejected: number;
+  /** 窓の中で打った時刻（#34 の合意 ①）。**行ではなく配達を数える** */
+  typedTimes: number[];
+  /**
+   * 上限に当たって止めている。**人が解除するまで戻さない**（合意 ③）。
+   *
+   * 自動で戻すと、上限の目的（誰も見ていない間にエージェントが動き
+   * 続ける）をいちばん外したい場面で外す
+   */
+  capped: boolean;
   pending: Pending | null;
   /**
    * 諦めた後、ペインが動くまで打ち直さない。
@@ -247,6 +244,8 @@ export class TriggerWatcher {
       lastBytes: null,
       partialSince: null,
       rejected: 0,
+      typedTimes: [],
+      capped: false,
       pending: null,
       stuck: false,
     });
@@ -325,7 +324,31 @@ export class TriggerWatcher {
       // 確認中の行も「まだ届いていない」。送った数ではなく届いた数を出す
       held: entry.held.length + (entry.pending?.lines.length ?? 0),
       error: entry.error,
+      capped: entry.capped,
     }));
+  }
+
+  /**
+   * 上限で止めたトリガーを、人が解除する（#34 の合意 ③）。
+   *
+   * **窓も空にする。** そのままだと、溜まった分を届けた直後の 1 通でまた止まる。
+   * 打たなかった行の数（合意 ⑥）も、人が見たことにして消す。
+   *
+   * 保留していた行は捨てていないので、次の回に 1 通で届く（合意 ②）。
+   */
+  release(watch: string): boolean {
+    const entry = this.entries.find((e) => e.config.watch === watch);
+    if (!entry) return false;
+
+    entry.capped = false;
+    entry.typedTimes = [];
+    entry.rejected = 0;
+    this.onEvent({
+      kind: "trigger-released",
+      watch: entry.config.watch,
+      title: entry.config.pane.title,
+    });
+    return true;
   }
 
   /** 保存しておくカーソル。次の起動でここから再開する */
@@ -430,6 +453,38 @@ export class TriggerWatcher {
     return panes[0];
   }
 
+  /**
+   * 上限に当たっているか（#34 の合意 ①）。当たっていれば止めて理由を出す。
+   *
+   * **数えるのは配達（打った回数）。** 作業中に溜まった行は 1 通にまとまるので、
+   * 行で数えると正当な連投で当たる。窓より古い配達は数えない。
+   */
+  private overLimit(entry: Entry): boolean {
+    const limit = entry.config.limit;
+    if (!limit) return false;
+
+    if (!entry.capped) {
+      const windowMs = limit.minutes * 60_000;
+      entry.typedTimes = entry.typedTimes.filter((t) => this.now() - t < windowMs);
+      if (entry.typedTimes.length < limit.count) return false;
+
+      entry.capped = true;
+      this.onEvent({
+        kind: "trigger-capped",
+        watch: entry.config.watch,
+        title: entry.config.pane.title,
+        count: limit.count,
+        minutes: limit.minutes,
+        held: entry.held.length,
+      });
+    }
+
+    entry.error =
+      `配達が上限（${limit.minutes} 分に ${limit.count} 回）に当たったので止めています。` +
+      `解除するまで配りません: ${entry.config.pane.title}`;
+    return true;
+  }
+
   /** 送れる状態なら、保留をまとめて 1 通で打つ（確定はまだしない）。 */
   private deliver(entry: Entry): void {
     const pane = this.resolvePane(entry);
@@ -437,6 +492,14 @@ export class TriggerWatcher {
 
     // ペインが動いたら、詰まりは解けたとみなして再開する
     if (entry.stuck && pane.status !== DELIVERABLE) entry.stuck = false;
+
+    // ★ **止めている間は、ペインの状態にかかわらず理由を出す。** 下の
+    // 「指示待ちでなければ打たない」より先に見ないと、ペインが作業中の回だけ
+    // 理由が消える（止まっているのに、見えたり消えたりする）
+    if (entry.capped) {
+      this.overLimit(entry);
+      return;
+    }
 
     if (entry.held.length === 0) return;
 
@@ -447,6 +510,8 @@ export class TriggerWatcher {
 
     // 指示待ちのときだけ。確認待ちへ送ると、打った文字が回答になる（#27）
     if (pane.status !== DELIVERABLE) return;
+
+    if (this.overLimit(entry)) return;
 
     const lines = entry.held;
     const text = renderTemplate(entry.config.send, templateValues(lines));
@@ -460,6 +525,7 @@ export class TriggerWatcher {
       submits: 0,
     };
     entry.heldSince = null;
+    entry.typedTimes.push(this.now());
     this.typeInto(pane.id, text);
     this.onEvent({
       kind: "typed",

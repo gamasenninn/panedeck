@@ -715,6 +715,171 @@ test.describe("id の形を確かめてから打つ", () => {
   });
 });
 
+/**
+ * **配達の上限**（#34 の合意 ① ② ③）。
+ *
+ * ペイン同士が起こし合うと、誰も見ていない間にエージェントが動き続けて
+ * 利用枠を使い切る。Tealus の「返すときは発信者 1 人」は人がルームを見ている
+ * から効く慣習で、郵便受けには見ている人がいない。だから**機械的に止める**。
+ *
+ * - トリガーごとに数える（ペインごとだと、郵便受けの暴走が同じペインへの
+ *   Tealus の配達まで止める）
+ * - **行ではなく配達で数える**（溜まった行は 1 通にまとまるので、行で数えると
+ *   正当な連投で当たる）
+ * - 当たったら保留。**捨てない**。**人が解除するまで戻さない**
+ */
+test.describe("配達の上限", () => {
+  const LIMIT = { count: 3, minutes: 10 };
+  const WINDOW = LIMIT.minutes * 60_000;
+
+  function capSetup(options: Record<string, unknown> = {}) {
+    const events: Array<Record<string, unknown>> = [];
+    const base = setup({
+      onEvent: (e: Record<string, unknown>) => events.push(e),
+      ...options,
+    });
+    const file = tempFile("");
+    let n = 0;
+    /** 1 行足して、打つ → 確定 → 実行まで進める */
+    const deliverOne = () => {
+      n += 1;
+      fs.appendFileSync(file, `{"id":"m${n}"}\n`);
+      base.runHandshake();
+    };
+    return { ...base, file, events, deliverOne };
+  }
+
+  test("上限までは打つ", () => {
+    const { watcher, file, sent, deliverOne } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}", limit: LIMIT });
+
+    deliverOne();
+    deliverOne();
+    deliverOne();
+
+    expect(sent.map((x) => x.text)).toEqual(["m1", "m2", "m3"]);
+  });
+
+  test("超えた分は打たずに保留し、理由を出す", () => {
+    const { watcher, file, sent, deliverOne } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}", limit: LIMIT });
+
+    for (let i = 0; i < 4; i += 1) deliverOne();
+
+    expect(sent.map((x) => x.text)).toEqual(["m1", "m2", "m3"]);
+    const [state] = watcher.state();
+    expect(state.held).toBe(1);
+    expect(state.capped).toBe(true);
+    expect(state.error).toContain("上限");
+  });
+
+  /** ★ 止まっているのに、ペインが作業中の回だけ理由が消えると見落とす */
+  test("ペインが作業中でも、止めている理由は消えない", () => {
+    const { watcher, file, deliverOne, setStatus } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}", limit: LIMIT });
+
+    for (let i = 0; i < 4; i += 1) deliverOne();
+    setStatus("running");
+    watcher.check();
+
+    expect(watcher.state()[0].error).toContain("上限");
+  });
+
+  /** ★ 自動で戻すと、誰も見ていない間の暴走が間欠的に続く（合意 ③） */
+  test("時間が過ぎても自動では戻らない", () => {
+    const { watcher, file, sent, deliverOne, advance } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}", limit: LIMIT });
+
+    for (let i = 0; i < 4; i += 1) deliverOne();
+    advance(WINDOW * 3);
+    watcher.check();
+
+    expect(sent).toHaveLength(3);
+    expect(watcher.state()[0].capped).toBe(true);
+  });
+
+  /** ★ 捨てない。解除すると、溜まった分が 1 通で届く（合意 ②） */
+  test("人が解除すると、溜まった分が 1 通で届く", () => {
+    const { watcher, file, sent, deliverOne } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{count} 件 {id}", limit: LIMIT });
+
+    for (let i = 0; i < 5; i += 1) deliverOne();
+    expect(watcher.release(file)).toBe(true);
+    watcher.check();
+
+    expect(sent.map((x) => x.text)).toEqual(["1 件 m1", "1 件 m2", "1 件 m3", "2 件 m5"]);
+    expect(watcher.state()[0].capped).toBe(false);
+  });
+
+  /** 解除したら窓も空にする。そうしないと直後の 1 通で、また止まる */
+  test("解除の直後は、上限まで打てる", () => {
+    const { watcher, file, sent, deliverOne, runHandshake } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}", limit: LIMIT });
+
+    for (let i = 0; i < 4; i += 1) deliverOne();
+    watcher.release(file);
+    runHandshake(); // 溜まっていた m4 を最後まで届ける
+    deliverOne();
+    deliverOne();
+
+    expect(sent.map((x) => x.text)).toEqual(["m1", "m2", "m3", "m4", "m5", "m6"]);
+  });
+
+  test("窓より古い配達は数えない", () => {
+    const { watcher, file, sent, deliverOne, advance } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}", limit: LIMIT });
+
+    deliverOne();
+    deliverOne();
+    deliverOne();
+    advance(WINDOW);
+    deliverOne();
+
+    expect(sent).toHaveLength(4);
+    expect(watcher.state()[0].capped).toBe(false);
+  });
+
+  /** ★ ペインごとではない。郵便受けが止まっても Tealus の配達は続く（合意 ①） */
+  test("上限はトリガーごと。同じペインへの別のトリガーは止まらない", () => {
+    const { watcher, file, sent, deliverOne, runHandshake } = capSetup();
+    const other = tempFile("");
+    watcher.add({ watch: file, pane: { title: "a" }, send: "mail {id}", limit: LIMIT });
+    watcher.add({ watch: other, pane: { title: "a" }, send: "tealus {id}" });
+
+    for (let i = 0; i < 4; i += 1) deliverOne();
+    fs.appendFileSync(other, '{"id":"t1"}\n');
+    runHandshake();
+
+    expect(sent.map((x) => x.text)).toContain("tealus t1");
+  });
+
+  test("上限を書かなければ何回でも打つ", () => {
+    const { watcher, file, sent, deliverOne } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+
+    for (let i = 0; i < 10; i += 1) deliverOne();
+
+    expect(sent).toHaveLength(10);
+  });
+
+  test("止めたことと解除したことを記録に残す（止めたのは 1 度だけ）", () => {
+    const { watcher, file, events, deliverOne } = capSetup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}", limit: LIMIT });
+
+    for (let i = 0; i < 6; i += 1) deliverOne();
+    watcher.release(file);
+
+    const kinds = events.map((e) => e.kind);
+    expect(kinds.filter((k) => k === "trigger-capped")).toHaveLength(1);
+    expect(kinds).toContain("trigger-released");
+  });
+
+  test("知らないファイルの解除は false", () => {
+    const { watcher } = capSetup();
+    expect(watcher.release("no-such-file")).toBe(false);
+  });
+});
+
 test.describe("変わっていなければ読まない", () => {
   function countingSetup(file: string, options: Record<string, unknown> = {}) {
     let reads = 0;

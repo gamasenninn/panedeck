@@ -392,6 +392,38 @@ test.describe("triggers", () => {
 
     expect(triggers[0]).toEqual({ watch: "a", pane: { title: "A" }, send: "s" });
   });
+
+  /**
+   * 配達の上限（#34 の合意 ①）。**書いたトリガーにだけ掛かる。**
+   * Tealus のトリガーには掛けない（人の普通の会話が 10 分に 6 回の縁にいた）。
+   */
+  test.describe("limit", () => {
+    const base = { watch: "a", pane: { title: "A" }, send: "s" };
+    const one = (limit: unknown) =>
+      normalizeSettings({ triggers: [{ ...base, limit }] }).triggers[0];
+
+    test("書かなければ上限は無い", () => {
+      expect(normalizeSettings({ triggers: [base] }).triggers[0].limit).toBeUndefined();
+    });
+
+    test("回数と分を読む", () => {
+      expect(one({ count: 6, minutes: 10 }).limit).toEqual({ count: 6, minutes: 10 });
+    });
+
+    /**
+     * ★ **書き損じを「上限なし」にしない。** 上限は安全のための項目なので、
+     * 読めなかったときに倒れる先は「掛からない」ではなく既定の上限。
+     */
+    test("読めない値は既定の 10 分に 6 回へ寄せる", () => {
+      expect(one({ count: "abc", minutes: null }).limit).toEqual({ count: 6, minutes: 10 });
+      expect(one(true).limit).toEqual({ count: 6, minutes: 10 });
+      expect(one({}).limit).toEqual({ count: 6, minutes: 10 });
+    });
+
+    test("範囲外は端に寄せる", () => {
+      expect(one({ count: 0, minutes: 0 }).limit).toEqual({ count: 1, minutes: 1 });
+    });
+  });
 });
 
 /**

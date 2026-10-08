@@ -209,6 +209,19 @@ export interface TriggerConfig {
   pane: { title: string };
   /** 送る文面のひな型。`{count}` と最後の行の最上位フィールドが使える */
   send: string;
+  /**
+   * 配達の上限（#34 の合意 ①）。`minutes` 分の間に `count` 回まで打つ。
+   * 超えたら配らずに保留し、**人が解除するまで**次を打たない。
+   *
+   * 書かなければ掛からない。Tealus のトリガーには掛けない —— 人の普通の
+   * 会話が 10 分に 6 回の縁にいた（10/7 の実測）
+   */
+  limit?: TriggerLimit;
+}
+
+export interface TriggerLimit {
+  count: number;
+  minutes: number;
 }
 
 /** 画面に出すためのトリガーの様子（#28） */
@@ -219,6 +232,8 @@ export interface TriggerState {
   held: number;
   /** 届けられない理由。無ければ空 */
   error: string;
+  /** 上限に当たって止めている。人が解除するまで戻らない（#34 の合意 ③） */
+  capped: boolean;
 }
 
 /** 裏で走らせ続けるコマンド（#29） */
@@ -314,6 +329,8 @@ export interface DeckApi {
   listAgents(): Promise<AgentProfileSummary[]>;
   /** トリガーの様子。保留件数と、届けられない理由（#28） */
   listTriggers(): Promise<TriggerState[]>;
+  /** 上限で止めたトリガーを解除する。人が押したときだけ（#34 の合意 ③） */
+  releaseTrigger(watch: string): Promise<boolean>;
   /** 裏のコマンドの様子。落ち続けていることを隠さない（#29） */
   listServices(): Promise<ServiceState[]>;
   /** 裏のコマンドの出力。ペインへは流さず、ここで見る（#29） */

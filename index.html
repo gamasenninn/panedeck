@@ -611,6 +611,15 @@
       >
 
       <span id="trigger-error" data-testid="trigger-error" class="danger-text" hidden></span>
+      <!-- 上限で止めたトリガーの解除（#34 の合意 ③）。自動では戻さない -->
+      <button
+        id="trigger-release"
+        data-testid="trigger-release"
+        title="上限で止めた配達を再開します。溜まった分は 1 通にまとめて届きます"
+        hidden
+      >
+        配達を再開
+      </button>
 
       <!--
         裏のコマンドの様子（#29）。押すとログが見られる。

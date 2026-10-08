@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 
-import type { Settings, TriggerConfig, ServiceConfig } from "../types/panedeck";
+import type { Settings, TriggerConfig, TriggerLimit, ServiceConfig } from "../types/panedeck";
 
 /**
  * アプリ設定の読み書き。
@@ -91,7 +91,29 @@ function normalizeTrigger(raw: unknown): TriggerConfig | null {
   if (watch === "" || send === "" || title === "") return null;
 
   // 余計な項目は持ち込まない
-  return { watch, pane: { title }, send };
+  const trigger: TriggerConfig = { watch, pane: { title }, send };
+  if (source.limit !== undefined) trigger.limit = normalizeLimit(source.limit);
+  return trigger;
+}
+
+/** 配達の上限の既定（#34 の合意 ①）。正当な連投は 10 分に 2〜3 通、暴走は約 11 回 */
+export const DEFAULT_TRIGGER_LIMIT: TriggerLimit = { count: 6, minutes: 10 };
+
+/**
+ * 配達の上限を読む。
+ *
+ * ★ **書き損じを「上限なし」にしない。** 上限は安全のための項目なので、
+ * 読めなかったときに倒れる先は「掛からない」ではなく既定の上限。
+ */
+function normalizeLimit(raw: unknown): TriggerLimit {
+  const source =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  return {
+    count: clampNumber(source.count, DEFAULT_TRIGGER_LIMIT.count, 1, 1000),
+    minutes: clampNumber(source.minutes, DEFAULT_TRIGGER_LIMIT.minutes, 1, 24 * 60),
+  };
 }
 
 /**

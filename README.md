@@ -256,6 +256,22 @@ This mattered once anyone could write the file. An id issued by a server, like T
 
 **Only `{id}` is checked.** Any other field you put in `send` is still yours to vouch for.
 
+#### A limit, for files anyone can write
+
+A trigger can carry a delivery limit:
+
+```json
+{ "watch": ".../mailbox/main.jsonl", "pane": { "title": "main" }, "send": "...", "limit": { "count": 6, "minutes": 10 } }
+```
+
+Within any `minutes`-long window, at most `count` messages are typed. The next one is **held, not dropped**, the toolbar says the trigger has stopped, and a **Resume delivery** button appears. Nothing resumes on its own. When you press it, whatever was held arrives as one message.
+
+It exists for panes that can wake each other. Two agents answering each other's mail keep each other running — and spending — with nobody watching; a convention in a prompt is not a brake. The numbers come from use: a pane legitimately sends two or three in ten minutes, a runaway pair about eleven.
+
+- **Counted per trigger, in deliveries.** Lines that pile up while a pane is busy go out as one message, so they count once. A runaway mailbox never stops another trigger aimed at the same pane
+- **Leave it off for a queue that people write to.** One afternoon of ordinary conversation on Tealus reached six deliveries in ten minutes
+- A `limit` that cannot be read becomes 6 per 10 minutes, not no limit
+
 #### Typing and submitting are two events
 
 PaneDeck types the text, then presses Enter as a separate write a moment later, and only treats the lines as delivered once the pane has actually started working.

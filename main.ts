@@ -528,6 +528,14 @@ ipcMain.handle("agent:list", () => listProfiles());
 /** トリガーの様子（保留件数・届かない理由）。画面に出すためだけのもの（#28） */
 ipcMain.handle("trigger:list", () => triggerWatcher?.state() ?? []);
 
+/**
+ * 上限で止めたトリガーを解除する（#34 の合意 ③）。**人が押したときだけ**。
+ * 保留していた行は捨てていないので、次の見回りで 1 通にまとまって届く
+ */
+ipcMain.handle("trigger:release", (_event, watch: string) =>
+  triggerWatcher ? triggerWatcher.release(String(watch)) : false
+);
+
 ipcMain.handle("service:list", () => serviceRunner?.state() ?? []);
 ipcMain.handle("service:log", (_event, name: string) =>
   serviceRunner?.log(name) ?? ""

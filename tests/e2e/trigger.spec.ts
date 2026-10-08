@@ -265,3 +265,54 @@ test("届いたことが、待った時間つきで残る", async () => {
   expect(typeof delivered.waitedMs).toBe("number");
   expect(delivered.submits).toBeGreaterThanOrEqual(1);
 });
+
+/**
+ * 配達の上限と、人が押す解除（#34 の合意 ① ② ③）。
+ *
+ * 止めたことが**ツールバーに見え**、**押せば溜まった分が届く**ところまでを
+ * 実際のアプリで確かめる。止めたまま自動では戻らないことは単体で見ている。
+ */
+test("上限に当たると止まり、解除を押すと溜まった分が届く", async () => {
+  await launchWith([
+    {
+      watch: QUEUE,
+      pane: { title: "受付" },
+      send: "新着 {count} 件 last={id}",
+      limit: { count: 1, minutes: 10 },
+    },
+  ]);
+  await givenPane("受付", READY_SCREEN);
+
+  // 1 通目は届く
+  fs.appendFileSync(QUEUE, '{"id":"m1"}\n', "utf8");
+  await expect
+    .poll(() => writtenTo(electronApp, 0), { timeout: 10_000 })
+    .toEqual(["新着 1 件 last=m1", "\r"]);
+  await emitPtyData(electronApp, 0, "\x1b[2J\x1b[H● 作業しています…\r\n");
+  await advanceClock(electronApp, 1000);
+  // **確認が済むまで待ってから**指示待ちへ戻す。すぐ戻すと、300ms ごとの
+  // 見回りが作業中の瞬間を一度も見ず、1 通目が確認待ちのまま残る
+  await expect
+    .poll(async () => (await page.evaluate(() => window.deck.listTriggers()))[0].held, {
+      timeout: 10_000,
+    })
+    .toBe(0);
+  await emitPtyData(electronApp, 0, "\x1b[2J\x1b[H" + READY_SCREEN);
+  await advanceClock(electronApp, 1000);
+
+  // 2 通目は上限で止まる。理由と解除のボタンが見える
+  fs.appendFileSync(QUEUE, '{"id":"m2"}\n', "utf8");
+  await expect(page.locator("[data-testid=trigger-error]")).toContainText("上限", {
+    timeout: 10_000,
+  });
+  const release = page.locator("[data-testid=trigger-release]");
+  await expect(release).toBeVisible();
+  expect(await writtenTo(electronApp, 0)).toEqual(["新着 1 件 last=m1", "\r"]);
+
+  // 押すと届く。捨てていない
+  await release.click();
+  await expect
+    .poll(() => writtenTo(electronApp, 0), { timeout: 10_000 })
+    .toContain("新着 1 件 last=m2");
+  await expect(release).toBeHidden();
+});
