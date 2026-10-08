@@ -38,30 +38,82 @@ export interface CleanupResult {
 
 /**
  * 索引を読む。無い・壊れている・形が違う、のいずれでも空を返す。
+ *
+ * **見るだけの用途向け。** 書き戻す側は `loadIndex` で「無い」と「読めない」を
+ * 見分けること —— 空を返されたまま足して書くと、索引が丸ごと消える。
  */
 export function readIndex(indexPath: string): LogIndexEntry[] {
-  try {
-    const raw = JSON.parse(fs.readFileSync(indexPath, "utf8"));
-    if (!Array.isArray(raw)) return [];
+  const loaded = loadIndex(indexPath);
+  return loaded.state === "ok" ? loaded.entries : [];
+}
 
-    return raw.filter(
+type LoadedIndex =
+  | { state: "ok"; entries: LogIndexEntry[] }
+  /** まだ作られていない。空から始めてよい */
+  | { state: "missing" }
+  /** 読めたが JSON として壊れている。待っても直らない */
+  | { state: "corrupt" }
+  /** 読めなかった（他が掴んでいる等）。**待てば読める**ので触らない */
+  | { state: "unreadable" };
+
+/**
+ * 索引を読み、**「無い」と「読めない」を見分けて**返す（2026-10-08）。
+ *
+ * 以前はどちらも空として扱っていたので、一瞬読めなかったときに 1 件足すと
+ * **それまでの索引が丸ごと消えた**。実機では 8/10〜9/21 のログ 36 個が索引から
+ * 外れ、30 日を過ぎても片付けられずに残っていた。
+ */
+function loadIndex(
+  indexPath: string,
+  readFile: (file: string) => string = (file) => fs.readFileSync(file, "utf8")
+): LoadedIndex {
+  let text: string;
+  try {
+    text = readFile(indexPath);
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT"
+      ? { state: "missing" }
+      : { state: "unreadable" };
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { state: "corrupt" };
+  }
+  if (!Array.isArray(raw)) return { state: "corrupt" };
+
+  return {
+    state: "ok",
+    entries: raw.filter(
       (entry): entry is LogIndexEntry =>
         entry &&
         typeof entry.file === "string" &&
         entry.file !== "" &&
         Number.isFinite(entry.createdAt)
-    );
-  } catch {
-    return [];
-  }
+    ),
+  };
 }
 
-/** 索引を書く。失敗しても投げない（記録できないだけで、書き出し自体は続く）。 */
+/**
+ * 索引を書く。失敗しても投げない（記録できないだけで、書き出し自体は続く）。
+ *
+ * **一時ファイルに書いてから置き換える。** 直接書くと、途中で落ちたときに
+ * 壊れた JSON が残り、次に読んだときに「壊れている」になる。
+ */
 function writeIndex(indexPath: string, entries: LogIndexEntry[]): void {
+  const temp = `${indexPath}.tmp`;
   try {
     fs.mkdirSync(path.dirname(indexPath), { recursive: true });
-    fs.writeFileSync(indexPath, JSON.stringify(entries, null, 2), "utf8");
+    fs.writeFileSync(temp, JSON.stringify(entries, null, 2), "utf8");
+    fs.renameSync(temp, indexPath);
   } catch {
+    try {
+      fs.rmSync(temp, { force: true });
+    } catch {
+      // 片付けられないだけ
+    }
     // 索引が残らないと、そのぶんは片付けの対象外になるだけ。
     // 「消せない」方向に倒れるので実害は小さい
   }
@@ -75,9 +127,26 @@ function writeIndex(indexPath: string, entries: LogIndexEntry[]): void {
 export function addToIndex(
   indexPath: string,
   filePath: string,
-  createdAt: number
+  createdAt: number,
+  { readFile }: { readFile?: (file: string) => string } = {}
 ): void {
-  const entries = readIndex(indexPath);
+  const loaded = loadIndex(indexPath, readFile);
+
+  // ★ **読めないときは書かない。** 空とみなして足すと、それまでの索引が
+  // 丸ごと消える。このファイルが載らないだけで済ませる（消せない側に倒れる）
+  if (loaded.state === "unreadable") return;
+
+  // 壊れていたら**退避してから**作り直す。黙って上書きすると、何が起きたかも
+  // 何が載っていたかも分からなくなる
+  if (loaded.state === "corrupt") {
+    try {
+      fs.renameSync(indexPath, `${indexPath}.broken-${Date.now()}`);
+    } catch {
+      return; // 退避できないなら触らない
+    }
+  }
+
+  const entries = loaded.state === "ok" ? loaded.entries : [];
   if (entries.some((entry) => entry.file === filePath)) return;
 
   entries.push({ file: filePath, createdAt });
@@ -132,10 +201,13 @@ export function cleanupLogs({
   indexPath,
   policy,
   now = () => Date.now(),
+  statSize = (file) => fs.statSync(file).size,
 }: {
   indexPath: string;
   policy: RetentionPolicy;
   now?: () => number;
+  /** 大きさを測る。テストから「開けない」を作るために差し替えられる */
+  statSize?: (file: string) => number;
 }): CleanupResult {
   const result: CleanupResult = { deleted: [], failed: [] };
 
@@ -146,12 +218,21 @@ export function cleanupLogs({
   const alive: Array<LogIndexEntry & { size: number }> = [];
   let indexChanged = false;
 
+  // 開けなかったが、無くなったとは言えないもの。**索引に残し、消さない**
+  const unknown: LogIndexEntry[] = [];
+
   for (const entry of entries) {
     try {
-      alive.push({ ...entry, size: fs.statSync(entry.file).size });
-    } catch {
-      // 手で消された・移動された。索引から落とすだけ
-      indexChanged = true;
+      alive.push({ ...entry, size: statSize(entry.file) });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        // 手で消された・移動された。索引から落とすだけ
+        indexChanged = true;
+      } else {
+        // ★ 一時的に開けなかっただけかもしれない。「消された」とみなして
+        // 落とすと、二度と片付けの対象に戻らない（2026-10-08）
+        unknown.push(entry);
+      }
     }
   }
 
@@ -160,7 +241,7 @@ export function cleanupLogs({
       ? new Set(selectForDeletion(alive, policy, now()))
       : new Set<string>();
 
-  const kept: LogIndexEntry[] = [];
+  const kept: LogIndexEntry[] = [...unknown];
   for (const entry of alive) {
     if (!targets.has(entry.file)) {
       kept.push({ file: entry.file, createdAt: entry.createdAt });

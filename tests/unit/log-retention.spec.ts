@@ -166,6 +166,96 @@ test.describe("索引", () => {
   });
 });
 
+/**
+ * ★ **「読めなかった」を「無い」と扱わない**（2026-10-08）。
+ *
+ * 実機の索引には 10/4 以降しか載っておらず、8/10〜9/21 の自動保存ログ 36 個が
+ * **索引から消えていた**（片付けの対象外になり、30 日を過ぎても残っていた）。
+ * 索引が一瞬でも読めないとき `readIndex` は空を返し、`addToIndex` はそこへ 1 件
+ * 足して**上書き**する —— それまでの索引が丸ごと消える。片付けも、開けなかった
+ * だけのファイルを「消された」として索引から落としていた。
+ */
+test.describe("索引を失わない", () => {
+  test("壊れた索引に足しても、壊れた中身は退避して残す", () => {
+    fs.writeFileSync(INDEX(), "{ 書きかけ", "utf8");
+
+    addToIndex(INDEX(), path.join(TEMP_DIR, "new.log"), NOW);
+
+    const broken = fs.readdirSync(TEMP_DIR).filter((f) => f.includes(".broken-"));
+    expect(broken).toHaveLength(1);
+    expect(fs.readFileSync(path.join(TEMP_DIR, broken[0]), "utf8")).toBe("{ 書きかけ");
+    expect(readIndex(INDEX()).map((e) => path.basename(e.file))).toEqual(["new.log"]);
+  });
+
+  /** 他のプロセスが掴んでいる等。**待てば読める**ので、上書きしてはいけない */
+  test("一時的に読めない索引には書かない", () => {
+    givenLog("old.log");
+    const before = fs.readFileSync(INDEX(), "utf8");
+    const busy = Object.assign(new Error("EBUSY: resource busy"), { code: "EBUSY" });
+
+    addToIndex(INDEX(), path.join(TEMP_DIR, "new.log"), NOW, {
+      readFile: () => {
+        throw busy;
+      },
+    });
+
+    expect(fs.readFileSync(INDEX(), "utf8")).toBe(before);
+  });
+
+  test("無い索引には、これまでどおり新しく作る", () => {
+    addToIndex(INDEX(), path.join(TEMP_DIR, "a.log"), NOW);
+    expect(readIndex(INDEX())).toHaveLength(1);
+  });
+
+  /** 途中で落ちても壊れた JSON を残さない書き方（一時ファイル → 置き換え） */
+  test("書いた後に一時ファイルを残さない", () => {
+    addToIndex(INDEX(), path.join(TEMP_DIR, "a.log"), NOW);
+    expect(fs.readdirSync(TEMP_DIR).filter((f) => f.includes(".tmp"))).toEqual([]);
+  });
+
+  /** 下の試験が本物の stat で素通りしないための見張り（実際に素通りした） */
+  test("片付けは渡した statSize で大きさを測る", () => {
+    const a = givenLog("a.log", { ageDays: 2 });
+    givenLog("b.log", { ageDays: 1 });
+
+    const result = cleanupLogs({
+      indexPath: INDEX(),
+      policy: { maxAgeDays: 0, maxTotalBytes: 1000 },
+      now: () => NOW,
+      statSize: () => 900,
+    });
+
+    expect(result.deleted).toEqual([a]);
+  });
+
+  test("片付けで、無い以外の理由で開けなかったものは索引から落とさない", () => {
+    const kept = givenLog("busy.log", { ageDays: 1 });
+    const busy = Object.assign(new Error("EBUSY: resource busy"), { code: "EBUSY" });
+
+    cleanupLogs({
+      indexPath: INDEX(),
+      policy: { maxAgeDays: 30, maxTotalBytes: 0 },
+      now: () => NOW,
+      statSize: (file) => {
+        if (file === kept) throw busy;
+        return fs.statSync(file).size;
+      },
+    });
+
+    expect(readIndex(INDEX()).map((e) => e.file)).toEqual([kept]);
+    expect(fs.existsSync(kept)).toBe(true);
+  });
+
+  test("片付けで、無くなっていたものはこれまでどおり索引から落とす", () => {
+    const gone = givenLog("gone.log");
+    fs.rmSync(gone);
+
+    cleanupLogs({ indexPath: INDEX(), policy: { maxAgeDays: 30, maxTotalBytes: 0 }, now: () => NOW });
+
+    expect(readIndex(INDEX())).toEqual([]);
+  });
+});
+
 test.describe("cleanupLogs", () => {
   test("期限切れのログを消す", () => {
     const old = givenLog("old-20260101-000000.log", { ageDays: 90 });
