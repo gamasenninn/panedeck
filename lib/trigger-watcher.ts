@@ -30,7 +30,7 @@
 
 import fs from "fs";
 
-import { renderTemplate, templateValues } from "./trigger-template";
+import { idProblem, renderTemplate, templateValues } from "./trigger-template";
 
 /** 送ってよい状態。**指示待ちだけ**（#27） */
 const DELIVERABLE = "ready";
@@ -163,6 +163,14 @@ interface Entry {
    * ので、断片のまま止まった書き手は**何も起きないまま静かに待たれる**。
    */
   partialSince: number | null;
+  /**
+   * id が識別子の形でなく、打たなかった行の数（#34 の合意 ⑥）。
+   *
+   * **起動している間は消さない。** 正しい便が後から来ても消すと、混ぜて
+   * 送られたときに見えなくなる。人が解除する仕組み（#34 の ③）ができたら、
+   * そちらで消す。記録（`trigger-rejected`）には 1 件ずつ残る
+   */
+  rejected: number;
   pending: Pending | null;
   /**
    * 諦めた後、ペインが動くまで打ち直さない。
@@ -238,6 +246,7 @@ export class TriggerWatcher {
       reported: "",
       lastBytes: null,
       partialSince: null,
+      rejected: 0,
       pending: null,
       stuck: false,
     });
@@ -251,6 +260,7 @@ export class TriggerWatcher {
       if (entry.pending) this.progress(entry);
       else this.deliver(entry);
       this.reportPartial(entry);
+      this.reportRejected(entry);
       this.reportError(entry);
     }
   }
@@ -267,6 +277,17 @@ export class TriggerWatcher {
     if (entry.error !== "" || entry.partialSince === null) return;
     if (this.now() - entry.partialSince < PARTIAL_WARN_MS) return;
     entry.error = `行が改行で終わっていません（続きを待っています）: ${entry.config.watch}`;
+  }
+
+  /**
+   * 打たなかった行があることを理由にする（#34 の合意 ⑥）。
+   *
+   * 他に理由があるときは譲る。届け先が無い・続きを待っている、のほうが
+   * いま直せる話で、こちらは起きたことの知らせだから。
+   */
+  private reportRejected(entry: Entry): void {
+    if (entry.error !== "" || entry.rejected === 0) return;
+    entry.error = `id が識別子の形でない行を ${entry.rejected} 件配りませんでした: ${entry.config.watch}`;
   }
 
   /**
@@ -368,6 +389,21 @@ export class TriggerWatcher {
 
     for (const line of complete.split(/\r?\n/)) {
       if (line.trim() !== "") {
+        // **識別子の形をしていない id は打たない**（#34 の合意 ⑥）。
+        // `{id}` は人が打った文として届くので、文章を入れられると受け手には
+        // 人の指示と区別できない。打たずに数え、記録に残す（中身は写さない）
+        const problem = idProblem(line, entry.config.send);
+        if (problem !== null) {
+          entry.rejected += 1;
+          this.onEvent({
+            kind: "trigger-rejected",
+            watch: entry.config.watch,
+            title: entry.config.pane.title,
+            reason: problem,
+          });
+          continue;
+        }
+
         // **いちばん古い行の時刻だけ覚える。** 配達の行に「どれだけ待ったか」
         // を入れれば、保留そのものを出来事にしなくて済む（#36）
         if (entry.heldSince === null) entry.heldSince = this.now();

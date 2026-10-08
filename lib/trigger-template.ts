@@ -80,3 +80,45 @@ export function templateValues(lines: string[]): Record<string, unknown> {
 
   return values;
 }
+
+/**
+ * 識別子として打ってよい形。英数字とハイフンで 40 字まで。
+ *
+ * Tealus の id（UUID・36 字）はこれに収まる。実機の queue は全班 2914 行が
+ * すべて通った。
+ */
+const SAFE_ID = /^[A-Za-z0-9-]{1,40}$/;
+
+/**
+ * この行の `{id}` を打ってよいか。打てないなら理由、打てるなら null。
+ *
+ * **`{id}` は人が打った文として届く**（#34 の合意 ⑥）。Tealus の id は
+ * サーバが発行した値だったので気にしなくてよかったが、郵便受けの id は
+ * **書き手が自由に書ける**。制御文字を落としても文章は通るので、id に
+ * 指示を書けば、受け手には人の指示と区別できない形で打ち込まれる。
+ *
+ * - 文面が `{id}` を使わないなら調べない（何を書かれても打たれない）
+ * - id が無い・JSON でない行も止める（`{id}` がそのまま打たれるだけで意味が無い）
+ * - ★ **理由に中身を写さない。** 記録に残すと、そこが次の運び屋になる
+ */
+export function idProblem(line: string, template: string): string | null {
+  if (!/\{id\}/.test(String(template ?? ""))) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return "JSON でない行";
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return "JSON でない行";
+  }
+
+  const id = (parsed as Record<string, unknown>).id;
+  if (id === undefined) return "id が無い行";
+  if (typeof id !== "string" && typeof id !== "number") return "id が識別子の形でない行";
+  if (!SAFE_ID.test(String(id))) {
+    return "id が識別子の形でない行（英数字とハイフンで 40 字まで）";
+  }
+  return null;
+}

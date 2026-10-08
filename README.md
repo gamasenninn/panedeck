@@ -238,6 +238,7 @@ A way for things outside PaneDeck — a message queue, a CI result, another agen
 - **Delivery happens only to a `指示待ち` pane** — not to `確認待ち`, and not to the combined `入力待ち` either, since a profile that cannot tell them apart cannot promise the pane is not mid-dialog
 - Lines that arrive while the pane is busy are held and go out as **one message**. Ten lines do not interrupt ten times
 - `{count}` is the number of lines being delivered; any other `{name}` is a top-level field of the **last** line. A non-JSON line is available as `{line}`
+- **A line is a line only once it ends in a newline.** Write each line, newline included, in one append. A line left without its newline is held, and after ten seconds the toolbar says it is waiting for the rest
 - How far each file has been delivered is persisted, so **lines that arrived while PaneDeck was closed are delivered, not skipped**
 - The pane shows that a trigger is attached and how many lines are held. An unreadable file, a missing pane, or two panes sharing one title are reported in the toolbar — **a trigger that silently does nothing is the failure this is meant to remove**
 
@@ -248,6 +249,12 @@ This is the trust boundary. Whatever `send` produces reaches the agent **exactly
 PaneDeck strips newlines and control characters from substituted values — one carriage return would submit early and turn the rest into a second message. **It cannot do more than that.**
 
 **Substituting content somebody else wrote — a message body, say — lets that person type into your agent as you.** PaneDeck has no way to know which fields are safe. **Send identifiers and let the agent fetch the content through its own tools.**
+
+**`{id}` is checked, because it is the one field everyone uses.** When `send` contains `{id}`, a line is typed only if its `id` looks like an identifier: letters, digits and hyphens, at most 40 characters. A line that fails — prose in the `id`, no `id`, not JSON — is not delivered; the toolbar says how many were dropped, and the event log records each with a reason but **not the content** (a log that copies it becomes the next carrier).
+
+This mattered once anyone could write the file. An id issued by a server, like Tealus's UUIDs, is safe to type; an id chosen by whoever appended the line is not — write an instruction into it and it arrives looking exactly like one you typed. Every Tealus id seen so far (2,914 lines across all queues) passes.
+
+**Only `{id}` is checked.** Any other field you put in `send` is still yours to vouch for.
 
 #### Typing and submitting are two events
 
