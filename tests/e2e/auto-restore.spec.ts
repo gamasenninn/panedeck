@@ -1,4 +1,4 @@
-﻿import { test, expect } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
@@ -35,12 +35,40 @@ let page: Page;
  * 立てるので、抱えたままアプリを終わらせると conpty の後始末がアプリの終了と
  * 競合し、**次に起動したアプリが応答を返さなくなる**ことがあった。
  */
+/**
+ * ★ **どこまで進んだかの足跡（#38）。** 全体試験の中でだけ、relaunch を通る
+ * 試験が 30 秒で時間切れになる。狙っても再現せず、単独で回し直すと証拠が
+ * 上書きされて消える。だから**失敗したときだけ**、各段に入った時刻を書き出す
+ * （`test.step` の名前は HTML の報告にしか出ず、画面にも error-context にも
+ * 出なかったので、それだけでは足りない）
+ */
+const trail: string[] = [];
+const t0 = Date.now();
+function mark(stage: string) {
+  trail.push(`${((Date.now() - t0) / 1000).toFixed(1)}s ${stage}`);
+}
+
+test.afterEach(async ({}, info) => {
+  if (info.status !== info.expectedStatus) {
+    console.error(`[#38 足跡] ${info.title}\n  ` + trail.slice(-8).join("\n  "));
+  }
+});
+
 async function relaunch() {
   if (electronApp) {
-    await electronApp.evaluate(() => global.__sessionManager.closeAll());
-    await closeApp(electronApp);
+    const app = electronApp;
+    mark("relaunch: 閉じる前にセッションを畳む");
+    await test.step("relaunch: 閉じる前にセッションを畳む", () =>
+      app.evaluate(() => global.__sessionManager.closeAll())
+    );
+    mark("relaunch: 前のアプリを閉じる");
+    await test.step("relaunch: 前のアプリを閉じる", () => closeApp(app));
   }
-  ({ electronApp, page } = await launchApp({ settingsPath: SETTINGS_PATH }));
+  mark("relaunch: 起動し直す");
+  ({ electronApp, page } = await test.step("relaunch: 起動し直す", () =>
+    launchApp({ settingsPath: SETTINGS_PATH })
+  ));
+  mark("relaunch: 起動できた");
 }
 
 async function givenSession(title: string) {
