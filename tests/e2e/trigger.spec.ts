@@ -316,3 +316,45 @@ test("上限に当たると止まり、解除を押すと溜まった分が届�
     .toContain("新着 1 件 last=m2");
   await expect(release).toBeHidden();
 });
+
+/**
+ * **閉じるときに偽の失敗を残さない。**
+ *
+ * 閉じる処理がペインを先に片付けると、その後にトリガーの見回りがもう一度
+ * 走り「ペインがありません」と記録していた。実機では**閉じるたびに毎回**
+ * 出ていた（10/6・10/8）。後から 1 日を読むための記録に偽の失敗が混ざり、
+ * 「直った」の行も対で出ないので、失敗したまま終わったように読める。
+ */
+test("閉じても「ペインがありません」を記録しない", async () => {
+  await launchWith([
+    { watch: QUEUE, pane: { title: "受付" }, send: "新着 {count} 件 last={id}" },
+  ]);
+  await givenPane("受付", READY_SCREEN);
+  // 見回りが何周か回ってから閉じる
+  await page.waitForTimeout(1000);
+
+  // ★ **実機の隙間を作る。** 本物の pty は後始末に時間がかかり、閉じ始めて
+  // からプロセスが消えるまでに見回りが何周も入る。フェイクの pty では一瞬で
+  // 終わるので、そのままだと**修正前でも通る**（実際に通った）。アプリ自身の
+  // 終了処理が全部走った後で、プロセスの終了だけを遅らせる
+  await electronApp.evaluate(({ app }) => {
+    app.on("will-quit", (event) => {
+      event.preventDefault();
+      setTimeout(() => app.exit(0), 1500);
+    });
+  });
+
+  const app = electronApp;
+  electronApp = undefined as unknown as ElectronApplication;
+  await closeApp(app);
+
+  const eventsDir = path.join(TEMP_DIR, "logs");
+  const written = fs.existsSync(eventsDir)
+    ? fs
+        .readdirSync(eventsDir)
+        .filter((n) => n.startsWith("events-"))
+        .map((n) => fs.readFileSync(path.join(eventsDir, n), "utf8"))
+        .join("")
+    : "";
+  expect(written).not.toContain("trigger-error");
+});

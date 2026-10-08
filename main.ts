@@ -131,6 +131,7 @@ function events(): EventLog {
 
 /** 設定にトリガーが無ければ null のまま */
 let triggerWatcher: TriggerWatcher | null = null;
+let triggerTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * 落ちたサービスを起こし直すか見にいく間隔 (ms)（#29）。
@@ -379,7 +380,7 @@ function startTriggers(): void {
   }
 
   let saved = JSON.stringify(triggerWatcher.cursors());
-  setInterval(() => {
+  triggerTimer = setInterval(() => {
     if (!triggerWatcher) return;
     triggerWatcher.check();
 
@@ -473,7 +474,23 @@ app.whenReady().then(() => {
   startServices();
 });
 
+/**
+ * トリガーを止める。**ペインを畳む前に呼ぶこと。**
+ *
+ * 先にペインを畳むと、プロセスが消えるまでの間に見回りが走り、
+ * 「ペインがありません」を記録する。実機では閉じるたびに毎回出ていた
+ * （本物の pty は後始末に時間がかかり、その間に何周も入る）。後から 1 日を
+ * 読むための記録に偽の失敗が混ざり、「直った」も対で出ないので、失敗した
+ * まま終わったように読める
+ */
+function stopTriggers(): void {
+  if (triggerTimer) clearInterval(triggerTimer);
+  triggerTimer = null;
+  triggerWatcher = null;
+}
+
 app.on("window-all-closed", () => {
+  stopTriggers();
   // 書き残しを先に吐き出してからセッションを畳む
   logWriter?.closeAll();
   sessionManager.closeAll();
@@ -483,6 +500,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
+  stopTriggers();
   logWriter?.closeAll();
   sessionManager.closeAll();
   // window-all-closed を通らない終わり方（macOS の終了など）でも必ず止める
