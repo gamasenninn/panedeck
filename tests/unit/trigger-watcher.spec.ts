@@ -8,6 +8,7 @@ import {
   CONFIRM_MS,
   MAX_SUBMITS,
   PARTIAL_WARN_MS,
+  IDLE_WARN_MS,
 } from "../../lib/trigger-watcher";
 
 /**
@@ -923,6 +924,113 @@ test.describe("配達の上限", () => {
   test("知らないファイルの解除は false", () => {
     const { watcher } = capSetup();
     expect(watcher.release("no-such-file")).toBe(false);
+  });
+});
+
+/**
+ * **届け先が動いていないことを黙らない**（2026-10-08）。
+ *
+ * 届け先が指示待ちでなければ保留するが、**二度と指示待ちに戻らない**状態がある。
+ * 実機で採った: claude は `/exit` すると自分の枠を消して PowerShell に戻り、
+ * ペインは**待機（idle）**になる。ペインごと終われば **exited**。どちらでも
+ * 便は永久に溜まり、出ていたのはペインの「保留 N」だけだった。受付の claude が
+ * 夜中に落ちたら、朝まで誰も気づかない。
+ *
+ * - 終了は**すぐ**出す（戻らない）
+ * - 待機は**猶予を過ぎたら**出す（起動直後や描き直しの一瞬を除く）
+ * - 作業中・確認待ちでは出さない（待てば届く / 画面に出ている）
+ * - 保留が無ければ出さない（届けるものが無いのに騒がない）
+ */
+test.describe("届け先が動いていない", () => {
+  function heldSetup(status: string) {
+    const file = tempFile("");
+    const base = setup();
+    base.setStatus(status);
+    base.watcher.add({ watch: file, pane: { title: "受付" }, send: "{id}" });
+    fs.appendFileSync(file, '{"id":"m1"}\n');
+    base.watcher.check();
+    return { ...base, file };
+  }
+
+  test("終了したペインに保留があれば、すぐ理由が出る", () => {
+    const { watcher } = heldSetup("exited");
+    expect(watcher.state()[0].error).toContain("終了");
+  });
+
+  test("待機のまま猶予を過ぎたら理由が出る", () => {
+    const { watcher, advance } = heldSetup("idle");
+    advance(IDLE_WARN_MS);
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("受付");
+    expect(watcher.state()[0].error).not.toBe("");
+  });
+
+  test("待機でも猶予のうちは出さない", () => {
+    const { watcher, advance } = heldSetup("idle");
+    advance(IDLE_WARN_MS - 1);
+    watcher.check();
+    expect(watcher.state()[0].error).toBe("");
+  });
+
+  test("作業中なら長くても出さない", () => {
+    const { watcher, advance } = heldSetup("running");
+    advance(IDLE_WARN_MS * 10);
+    watcher.check();
+    expect(watcher.state()[0].error).toBe("");
+  });
+
+  test("確認待ちなら長くても出さない", () => {
+    const { watcher, advance } = heldSetup("asking");
+    advance(IDLE_WARN_MS * 10);
+    watcher.check();
+    expect(watcher.state()[0].error).toBe("");
+  });
+
+  test("保留が無ければ、終了していても出さない", () => {
+    const file = tempFile("");
+    const { watcher, setStatus } = setup();
+    setStatus("exited");
+    watcher.add({ watch: file, pane: { title: "受付" }, send: "{id}" });
+    watcher.check();
+    expect(watcher.state()[0].error).toBe("");
+  });
+
+  /** 待機の時間は、指示待ちに戻ったら数え直す */
+  test("指示待ちに戻れば理由は消えて届く", () => {
+    const { watcher, advance, setStatus, sent } = heldSetup("idle");
+    advance(IDLE_WARN_MS);
+    watcher.check();
+    setStatus("ready");
+    watcher.check();
+    expect(watcher.state()[0].error).toBe("");
+    expect(sent.map((x) => x.text)).toEqual(["m1"]);
+  });
+
+  test("一度動いてからまた待機になったら、猶予は数え直す", () => {
+    const { watcher, advance, setStatus } = heldSetup("idle");
+    advance(IDLE_WARN_MS - 1000);
+    watcher.check();
+    setStatus("running");
+    watcher.check();
+    setStatus("idle");
+    watcher.check();
+    advance(IDLE_WARN_MS - 1000);
+    watcher.check();
+    expect(watcher.state()[0].error).toBe("");
+  });
+
+  test("動いていないことを記録に残す", () => {
+    const file = tempFile("");
+    const events: Array<Record<string, unknown>> = [];
+    const { watcher, setStatus } = setup({
+      onEvent: (e: Record<string, unknown>) => events.push(e),
+    });
+    setStatus("exited");
+    watcher.add({ watch: file, pane: { title: "受付" }, send: "{id}" });
+    fs.appendFileSync(file, '{"id":"m1"}\n');
+    watcher.check();
+    const error = events.find((e) => e.kind === "trigger-error");
+    expect(String(error?.reason)).toContain("終了");
   });
 });
 

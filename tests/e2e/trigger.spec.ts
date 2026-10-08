@@ -10,6 +10,7 @@ import {
   advanceClock,
   createSession,
   emitPtyData,
+  emitPtyExit,
   writtenTo,
   waitForPaneCount,
 } from "./helpers/electron-app";
@@ -357,4 +358,25 @@ test("閉じても「ペインがありません」を記録しない", async ()
         .join("")
     : "";
   expect(written).not.toContain("trigger-error");
+});
+
+/**
+ * **届け先が終わっていたら黙らない**（2026-10-08）。
+ *
+ * 単体では状態を文字列で渡して確かめている。ここでは SessionManager が出す
+ * 本物の状態（`exited`）で、ツールバーに理由が出ることを見る。
+ */
+test("届け先のペインが終了していたら、理由が見える", async () => {
+  await launchWith([
+    { watch: QUEUE, pane: { title: "受付" }, send: "新着 {count} 件 last={id}" },
+  ]);
+  await givenPane("受付", READY_SCREEN);
+  await emitPtyExit(electronApp, 0, 1);
+
+  fs.appendFileSync(QUEUE, '{"id":"m1"}\n', "utf8");
+
+  await expect(page.locator("[data-testid=trigger-error]")).toContainText("終了", {
+    timeout: 10_000,
+  });
+  expect(await writtenTo(electronApp, 0)).toEqual([]);
 });

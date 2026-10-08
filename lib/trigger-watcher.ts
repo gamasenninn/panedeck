@@ -49,6 +49,15 @@ const DELIVERABLE = "ready";
 export const PARTIAL_WARN_MS = 10_000;
 
 /**
+ * 届け先が**待機（idle）のまま**のとき、理由を出すまでの猶予。
+ *
+ * 実機で採った: claude は `/exit` すると自分の枠を消して PowerShell に戻り、
+ * ペインは待機になる。**二度と指示待ちに戻らない。** 起動直後や描き直しの
+ * 一瞬の待機と見分けるために、少し待つ
+ */
+export const IDLE_WARN_MS = 60_000;
+
+/**
  * 文面を打ってから確定の CR を送るまでの間隔 (ms)。
  *
  * 貼り付けと見なされる窓を越えるため。実測で 0ms は 0/4、500ms は 4/4。
@@ -175,6 +184,8 @@ interface Entry {
    * 続ける）をいちばん外したい場面で外す
    */
   capped: boolean;
+  /** 保留があるのに届け先が待機になった時刻。動けば消す */
+  idleSince: number | null;
   pending: Pending | null;
   /**
    * 諦めた後、ペインが動くまで打ち直さない。
@@ -253,6 +264,7 @@ export class TriggerWatcher {
       rejected: 0,
       typedTimes: [],
       capped: false,
+      idleSince: null,
       pending: null,
       stuck: false,
     });
@@ -492,6 +504,33 @@ export class TriggerWatcher {
     return true;
   }
 
+  /**
+   * 届け先が**二度と指示待ちに戻らない**状態なら、理由を出して true。
+   *
+   * 指示待ちでなければ保留するのが基本だが、終了したペインや、エージェントが
+   * 落ちてシェルに戻ったペイン（待機）は待っても届かない。以前はペインの
+   * 「保留 N」が出るだけで、**夜中に落ちたら朝まで誰も気づかなかった**。
+   *
+   * 作業中・確認待ちでは出さない。作業中は待てば届き、確認待ちは画面に出ている
+   */
+  private unresponsive(entry: Entry, pane: PaneRef): boolean {
+    const title = entry.config.pane.title;
+    if (pane.status === "exited") {
+      entry.idleSince = null;
+      entry.error = `送り先のペインは終了しています。開き直すまで届きません: ${title}`;
+      return true;
+    }
+    if (pane.status === "idle") {
+      entry.idleSince ??= this.now();
+      if (this.now() - entry.idleSince >= IDLE_WARN_MS) {
+        entry.error = `送り先でエージェントが動いていないようです（待機のまま）。届けられません: ${title}`;
+      }
+      return true;
+    }
+    entry.idleSince = null;
+    return false;
+  }
+
   /** 送れる状態なら、保留をまとめて 1 通で打つ（確定はまだしない）。 */
   private deliver(entry: Entry): void {
     const pane = this.resolvePane(entry);
@@ -508,7 +547,12 @@ export class TriggerWatcher {
       return;
     }
 
-    if (entry.held.length === 0) return;
+    if (entry.held.length === 0) {
+      entry.idleSince = null;
+      return;
+    }
+
+    if (this.unresponsive(entry, pane)) return;
 
     if (entry.stuck) {
       entry.error = `実行されませんでした。入力欄を片付けてください: ${entry.config.pane.title}`;
