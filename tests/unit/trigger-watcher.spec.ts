@@ -287,6 +287,52 @@ test.describe("保留中のカーソル", () => {
 
     expect(second.sent).toEqual([{ title: "s1", text: "2" }]);
   });
+
+  /**
+   * ★ **確かめている間に届いた行を、届けたことにしない。**
+   *
+   * 打ってから実行を確かめるまでの間（確定を待つ 0.5 秒と、動くのを待つ数秒）も
+   * 読み進めている。確認が取れたときにカーソルを「読んだところ」まで進めると、
+   * **その間に届いてまだ打っていない行まで届けたことになる**。閉じると、
+   * 次の起動では二度と拾わない。
+   */
+  test("確かめている間に届いた行は、カーソルに含めない", () => {
+    const file = tempFile("");
+    const { watcher, advance, setStatus } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+
+    const first = '{"id":"m1"}\n';
+    fs.appendFileSync(file, first);
+    watcher.check(); // m1 を打つ
+    fs.appendFileSync(file, '{"id":"m2"}\n');
+    advance(SUBMIT_DELAY_MS);
+    watcher.check(); // m2 を読み、m1 を確定
+    setStatus("running");
+    watcher.check(); // m1 の実行を確認
+
+    expect(watcher.cursors()[file]).toBe(first.length);
+  });
+
+  test("確かめている間に届いた行は、閉じて開き直しても届く", () => {
+    const file = tempFile("");
+    const one = setup();
+    one.watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+
+    fs.appendFileSync(file, '{"id":"m1"}\n');
+    one.watcher.check();
+    fs.appendFileSync(file, '{"id":"m2"}\n');
+    one.advance(SUBMIT_DELAY_MS);
+    one.watcher.check();
+    one.setStatus("running");
+    one.watcher.check(); // m1 は届いた。m2 は保留のまま閉じる
+    const saved = one.watcher.cursors()[file];
+
+    const two = setup();
+    two.watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" }, saved);
+    two.watcher.check();
+
+    expect(two.sent.map((x) => x.text)).toEqual(["m2"]);
+  });
 });
 
 /**

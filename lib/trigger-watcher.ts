@@ -116,6 +116,13 @@ interface Pending {
   /** 確定を送った時刻。まだなら null */
   submittedAt: number | null;
   submits: number;
+  /**
+   * 打った時点の読み位置。**確認が取れたら、カーソルはここまでしか進めない。**
+   *
+   * 確かめている間も読み進めるので、`readTo` には**まだ打っていない行**が
+   * 含まれうる。そこまで進めると、閉じたときにその行が二度と届かない
+   */
+  endsAt: number;
 }
 
 interface Entry {
@@ -523,6 +530,7 @@ export class TriggerWatcher {
       typedAt: this.now(),
       submittedAt: null,
       submits: 0,
+      endsAt: entry.readTo,
     };
     entry.heldSince = null;
     entry.typedTimes.push(this.now());
@@ -565,9 +573,10 @@ export class TriggerWatcher {
       return;
     }
 
-    // ペインが動いた＝実行された。ここで初めてカーソルを進める
+    // ペインが動いた＝実行された。ここで初めてカーソルを進める。
+    // **打った分だけ。** 確かめている間に届いた行は、まだ保留の中にいる
     if (pane.status !== DELIVERABLE) {
-      entry.cursor = entry.readTo;
+      entry.cursor = pending.endsAt;
       this.onEvent({
         kind: "delivery",
         watch: entry.config.watch,
