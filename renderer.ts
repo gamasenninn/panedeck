@@ -1003,7 +1003,12 @@ keyButtons.forEach((button) => {
   button.addEventListener("click", () => sendKey(button.dataset.key!));
 });
 
-const closeAllConfirmEl = document.getElementById("close-all-confirm")!;
+const closeAllBackdropEl = document.getElementById("close-all-backdrop")!;
+const closeAllCancelEl = document.getElementById("close-all-cancel") as HTMLButtonElement;
+
+function closeCloseAllConfirm() {
+  closeAllBackdropEl.hidden = true;
+}
 
 /**
  * 全終了は**押しただけでは閉じない**（2026-10-09）。何が止まるかを数で出し、
@@ -1014,11 +1019,13 @@ document.getElementById("close-all")!.addEventListener("click", async () => {
   const prompt = closeAllPrompt(sessions.map((session) => session.status));
   if (!prompt) return;
   document.getElementById("close-all-text")!.textContent = prompt.text;
-  closeAllConfirmEl.hidden = false;
+  closeAllBackdropEl.hidden = false;
+  // ★ 最初に選ぶのは「やめる」。Enter の押し間違いで終了しない
+  closeAllCancelEl.focus();
 });
 
 document.getElementById("close-all-ok")!.addEventListener("click", async () => {
-  closeAllConfirmEl.hidden = true;
+  closeCloseAllConfirm();
   await api.closeAllSessions();
   await sync();
   await showRestorePrevious();
@@ -1043,8 +1050,14 @@ restorePreviousEl.addEventListener("click", async () => {
   await sync();
 });
 
-document.getElementById("close-all-cancel")!.addEventListener("click", () => {
-  closeAllConfirmEl.hidden = true;
+closeAllCancelEl.addEventListener("click", closeCloseAllConfirm);
+
+// 背景を押しても、Esc でも閉じる。どちらも「やめる」側
+closeAllBackdropEl.addEventListener("click", (event) => {
+  if (event.target === closeAllBackdropEl) closeCloseAllConfirm();
+});
+closeAllBackdropEl.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeCloseAllConfirm();
 });
 
 document.getElementById("save-workspace")!.addEventListener("click", async () => {

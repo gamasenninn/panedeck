@@ -182,6 +182,45 @@ test("全終了していなければ、直前の構成に戻すは出ない", as
   await expect(page.locator("[data-testid=restore-previous]")).toBeHidden();
 });
 
+/**
+ * **確認はポップアップで出す**（2026-10-09、小野さんの依頼）。ツールバーの中に
+ * 出していたときは、目に入りにくかった。画面全体を覆い、他を押せなくする。
+ * `window.confirm` は E2E を止めるので使わない。
+ *
+ * ★ **最初に選ばれているのは「やめる」。** Enter の押し間違いで終了しない
+ */
+test("全終了の確認はポップアップで出て、最初は「やめる」が選ばれている", async () => {
+  await resetSessions(electronApp, page);
+  await createSession(page, { cwd: "C:\\app\\repo-a" });
+  await waitForPaneCount(page, 1);
+
+  await page.locator("[data-testid=close-all]").click();
+
+  const popup = page.locator("[data-testid=close-all-confirm]");
+  await expect(popup).toBeVisible();
+  await expect(popup).toHaveAttribute("role", "dialog");
+  await expect(page.locator("[data-testid=close-all-backdrop]")).toBeVisible();
+  await expect(page.locator("[data-testid=close-all-cancel]")).toBeFocused();
+
+  // 選ばれたまま Enter を押しても、閉じるのは確認だけ
+  await page.keyboard.press("Enter");
+  await expect(popup).toBeHidden();
+  expect(await listSessions(electronApp)).toHaveLength(1);
+});
+
+test("全終了の確認は Esc で閉じ、何も閉じない", async () => {
+  await resetSessions(electronApp, page);
+  await createSession(page, { cwd: "C:\\app\\repo-a" });
+  await waitForPaneCount(page, 1);
+
+  await page.locator("[data-testid=close-all]").click();
+  await expect(page.locator("[data-testid=close-all-confirm]")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("[data-testid=close-all-confirm]")).toBeHidden();
+  expect(await listSessions(electronApp)).toHaveLength(1);
+});
+
 test("ペインが無いときに全終了を押しても、確認は出さない", async () => {
   await resetSessions(electronApp, page);
 

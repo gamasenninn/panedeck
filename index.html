@@ -184,6 +184,7 @@
       }
 
       /* --- 設定ダイアログ --- */
+      #close-all-backdrop,
       #service-backdrop,
       #settings-backdrop {
         position: fixed;
@@ -195,11 +196,37 @@
         z-index: 100;
       }
 
+      #close-all-backdrop[hidden],
       #service-backdrop[hidden],
       #settings-backdrop[hidden] {
         display: none;
       }
 
+      #close-all-confirm .buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      /* 取り返しのつかない側だと一目で分かるように、普段から赤くする */
+      #close-all-ok {
+        border-color: #da3633;
+        color: #ff7b72;
+      }
+
+      /* 最初に選ばれている「やめる」が見えるように。Enter でこちらが押される */
+      #close-all-confirm button:focus {
+        outline: 2px solid #58a6ff;
+        outline-offset: 2px;
+      }
+
+      #close-all-confirm .hint {
+        color: #8b949e;
+        font-size: 12px;
+      }
+
+      #close-all-confirm,
       #service-dialog,
       #settings-dialog {
         background: #161b22;
@@ -629,15 +656,7 @@
       <span id="message" data-testid="message"></span>
       <span id="session-count" data-testid="session-count">0 セッション</span>
       <button id="close-all" class="danger" data-testid="close-all">全終了</button>
-      <!--
-        全終了の確認（2026-10-09）。以前は押した瞬間に全ペインを終了していた。
-        window.confirm は E2E を止めるので使わず、画面の中で聞く
-      -->
-      <span id="close-all-confirm" data-testid="close-all-confirm" class="danger-text" hidden>
-        <span id="close-all-text"></span>
-        <button id="close-all-ok" class="danger" data-testid="close-all-ok">終了する</button>
-        <button id="close-all-cancel" data-testid="close-all-cancel">やめる</button>
-      </span>
+
     </header>
 
     <main id="grid" class="empty" data-testid="grid">
@@ -668,6 +687,29 @@
         <pre id="service-log" data-testid="service-log"></pre>
         <div class="buttons">
           <button id="service-close" data-testid="service-close">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      全終了の確認（2026-10-09）。以前は押した瞬間に全ペインを終了していた。
+      ツールバーの中に出すと目に入りにくいので、画面全体を覆って聞く。
+      window.confirm は E2E を止めるので使わない。最初に選ばれているのは「やめる」
+    -->
+    <div id="close-all-backdrop" data-testid="close-all-backdrop" hidden>
+      <div
+        id="close-all-confirm"
+        data-testid="close-all-confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="close-all-title"
+      >
+        <h2 id="close-all-title">全終了</h2>
+        <p id="close-all-text"></p>
+        <p class="hint">作業中のエージェントも途中で止まります。終了したあとは、空の画面の「直前の構成に戻す」で戻せます。</p>
+        <div class="buttons">
+          <button id="close-all-cancel" data-testid="close-all-cancel">やめる</button>
+          <button id="close-all-ok" class="danger" data-testid="close-all-ok">終了する</button>
         </div>
       </div>
     </div>
