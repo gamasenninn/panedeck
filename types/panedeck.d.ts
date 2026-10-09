@@ -329,6 +329,10 @@ export interface DeckApi {
   listAgents(): Promise<AgentProfileSummary[]>;
   /** トリガーの様子。保留件数と、届けられない理由（#28） */
   listTriggers(): Promise<TriggerState[]>;
+  /** 全終了の直前の構成が何個ぶん残っているか（2026-10-09） */
+  countPrevious(): Promise<number>;
+  /** 全終了の直前の構成に戻す。人が押したときだけ */
+  restorePrevious(): Promise<{ ok: true; sessions: Session[] } | { ok: false; error: string }>;
   /** 上限で止めたトリガーを解除する。人が押したときだけ（#34 の合意 ③） */
   releaseTrigger(watch: string): Promise<boolean>;
   /** 裏のコマンドの様子。落ち続けていることを隠さない（#29） */

@@ -52,6 +52,17 @@ function autoRestorePath(): string {
   return path.join(path.dirname(settingsPath()), "last-session.json");
 }
 
+/**
+ * 全終了の直前の構成（2026-10-09）。**1 つだけ**持つ。
+ *
+ * 全終了は控え（last-session.json）を空で上書きするので、押し通すと会話の id
+ * ごと、どのペインがどの会話だったかを忘れる。ここに残しておき、空の画面から
+ * 人が押したときだけ戻す。**自動では戻さない**（全部閉じたら次は空のまま）
+ */
+function previousPath(): string {
+  return path.join(path.dirname(settingsPath()), "last-session.previous.json");
+}
+
 /** ログの出力先。設定が空なら設定ファイルと同じ場所の logs/ */
 function logDir(): string {
   return (
@@ -308,13 +319,51 @@ function defaultShell(): string {
  * テストではフェイクに差し替えられる。
  */
 function realPtyFactory({ shell, args, cwd, cols, rows, env }: PtyFactoryOptions): Pty {
-  return pty.spawn(shell || defaultShell(), args || [], {
+  const spawned = pty.spawn(shell || defaultShell(), args || [], {
     name: "xterm-color",
     cols: cols || 80,
     rows: rows || 24,
     cwd: cwd || os.homedir(),
     env: { ...process.env, ...env } as Record<string, string>,
   });
+  return process.env.PANEDECK_TRACE_PTY === "1" ? tracePty(spawned) : spawned;
+}
+
+/**
+ * pty の操作を stderr に書く（#38 の調べ用。`PANEDECK_TRACE_PTY=1` のときだけ）。
+ *
+ * 全体試験の中でだけ、立ち上げ直した PaneDeck が**アクセス違反（0xC0000005）で
+ * 落ちる**。直前に「もう居ないシェルへの kill」が走っている。JS の例外ではない
+ * ので、**どの操作の直後に落ちたか**を残さないと追えない
+ */
+function tracePty(target: Pty): Pty {
+  const pid = target.pid;
+  const alive = () => {
+    if (pid === undefined) return "?";
+    try {
+      process.kill(pid, 0);
+      return "生";
+    } catch {
+      return "死";
+    }
+  };
+  const log = (what: string) =>
+    process.stderr.write(`[pty ${new Date().toISOString().slice(11, 23)}] ${what} pid=${pid} (${alive()})\n`);
+  log("spawn");
+  target.onExit(({ exitCode }) => log(`onExit code=${exitCode}`));
+  const kill = target.kill.bind(target);
+  const resize = target.resize.bind(target);
+  target.kill = () => {
+    log("kill 前");
+    kill();
+    log("kill 後");
+  };
+  target.resize = (cols: number, rows: number) => {
+    log(`resize ${cols}x${rows} 前`);
+    resize(cols, rows);
+    log("resize 後");
+  };
+  return target;
 }
 
 const sessionManager = new SessionManager({
@@ -567,10 +616,49 @@ ipcMain.handle("session:close", (_, id: string) => {
 });
 
 ipcMain.handle("session:closeAll", () => {
+  // **閉じる前に**控える。閉じてからでは一覧が空になっている
+  const before = sessionManager.list();
+  if (before.length > 0) {
+    try {
+      saveWorkspace(previousPath(), before, { name: "previous" });
+    } catch {
+      // 控えられないだけ。全終了そのものは止めない
+    }
+  }
   if (logWriter) reportLogFailures(logWriter.closeAll());
   const count = sessionManager.closeAll();
   persistSessions();
   return count;
+});
+
+/** 全終了の直前の構成が何個ぶん残っているか。無ければ 0 */
+ipcMain.handle("workspace:previous", () => tryLoadWorkspace(previousPath())?.sessions.length ?? 0);
+
+/**
+ * 全終了の直前の構成に戻す。**自動復元と同じ経路**（会話の再開を含む・#33）。
+ * 戻したら控えは消す —— 二度押すと同じペインが二重にできる
+ */
+ipcMain.handle("workspace:restorePrevious", () => {
+  const workspace = tryLoadWorkspace(previousPath());
+  if (!workspace) return { ok: false, error: "直前の構成がありません" };
+
+  const created: Session[] = [];
+  for (const entry of workspace.sessions) {
+    try {
+      created.push(openFromEntry(entry));
+    } catch {
+      // 1 つのディレクトリが消えていても、残りは開く
+    }
+  }
+  for (const session of created) logWriter?.open(session.id, session.title);
+  persistSessions();
+
+  try {
+    fs.rmSync(previousPath(), { force: true });
+  } catch {
+    // 消せなくても、戻せてはいる
+  }
+  return { ok: true, sessions: created };
 });
 
 ipcMain.handle("session:reorder", (_, ids: string[]) => {

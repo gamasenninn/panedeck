@@ -629,6 +629,15 @@
       <span id="message" data-testid="message"></span>
       <span id="session-count" data-testid="session-count">0 セッション</span>
       <button id="close-all" class="danger" data-testid="close-all">全終了</button>
+      <!--
+        全終了の確認（2026-10-09）。以前は押した瞬間に全ペインを終了していた。
+        window.confirm は E2E を止めるので使わず、画面の中で聞く
+      -->
+      <span id="close-all-confirm" data-testid="close-all-confirm" class="danger-text" hidden>
+        <span id="close-all-text"></span>
+        <button id="close-all-ok" class="danger" data-testid="close-all-ok">終了する</button>
+        <button id="close-all-cancel" data-testid="close-all-cancel">やめる</button>
+      </span>
     </header>
 
     <main id="grid" class="empty" data-testid="grid">
@@ -636,6 +645,10 @@
         セッションがありません。<br />
         <strong>+ セッション追加</strong> でディレクトリを選ぶと、そこで
         <code>claude</code> が起動します。
+        <!-- 全終了の後だけ出る。押したときだけ戻す（2026-10-09） -->
+        <div>
+          <button id="restore-previous" data-testid="restore-previous" hidden></button>
+        </div>
       </div>
     </main>
 

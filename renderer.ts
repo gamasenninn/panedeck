@@ -22,6 +22,7 @@ import {
 } from "./renderer/broadcast.js";
 import type { BroadcastPane } from "./renderer/broadcast.js";
 import { serviceSummary, serviceLabel } from "./renderer/service-label.js";
+import { closeAllPrompt } from "./renderer/close-all.js";
 
 // contextBridge が公開したグローバル。モジュールなので、かつて衝突を招いた
 // `const deck` という名前を避ける必要はもう無いが、呼び分けやすさで api のまま
@@ -1002,9 +1003,48 @@ keyButtons.forEach((button) => {
   button.addEventListener("click", () => sendKey(button.dataset.key!));
 });
 
+const closeAllConfirmEl = document.getElementById("close-all-confirm")!;
+
+/**
+ * 全終了は**押しただけでは閉じない**（2026-10-09）。何が止まるかを数で出し、
+ * もう一度押させる。状態はメインから取り直す —— 画面の状態は最大 300ms 古い
+ */
 document.getElementById("close-all")!.addEventListener("click", async () => {
+  const sessions = await api.listSessions();
+  const prompt = closeAllPrompt(sessions.map((session) => session.status));
+  if (!prompt) return;
+  document.getElementById("close-all-text")!.textContent = prompt.text;
+  closeAllConfirmEl.hidden = false;
+});
+
+document.getElementById("close-all-ok")!.addEventListener("click", async () => {
+  closeAllConfirmEl.hidden = true;
   await api.closeAllSessions();
   await sync();
+  await showRestorePrevious();
+});
+
+const restorePreviousEl = document.getElementById("restore-previous") as HTMLButtonElement;
+
+/**
+ * 全終了の直前の構成が残っていれば、空の画面に戻すボタンを出す（2026-10-09）。
+ * 300ms の突き合わせでは聞かない。全終了の後と起動時だけで足りる
+ */
+async function showRestorePrevious() {
+  const count = await api.countPrevious();
+  restorePreviousEl.textContent = `直前の構成に戻す（${count} 個）`;
+  restorePreviousEl.hidden = count === 0;
+}
+
+restorePreviousEl.addEventListener("click", async () => {
+  restorePreviousEl.hidden = true;
+  const result = await api.restorePrevious();
+  if (!result.ok) showMessage(`戻せません: ${result.error}`, { error: true });
+  await sync();
+});
+
+document.getElementById("close-all-cancel")!.addEventListener("click", () => {
+  closeAllConfirmEl.hidden = true;
 });
 
 document.getElementById("save-workspace")!.addEventListener("click", async () => {
@@ -1048,3 +1088,5 @@ setInterval(sync, 300);
 setupAgentSelect();
 loadSettings();
 sync();
+// 前回の起動で全終了したまま閉じていれば、空の画面に戻すボタンが出る
+showRestorePrevious();

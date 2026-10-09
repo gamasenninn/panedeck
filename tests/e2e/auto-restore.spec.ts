@@ -170,6 +170,7 @@ test("全部閉じた状態で再起動すると空のまま", async () => {
   await waitForPaneCount(page, 1);
 
   await page.locator("[data-testid=close-all]").click();
+  await page.locator("[data-testid=close-all-ok]").click();
   await waitForPaneCount(page, 0);
   await expect.poll(() => readAutoSaved().sessions.length).toBe(0);
 

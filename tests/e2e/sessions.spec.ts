@@ -1,4 +1,4 @@
-﻿import { test, expect } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import type { ElectronApplication, Page } from "@playwright/test";
 import {
   launchApp,
@@ -114,10 +114,80 @@ test("全終了ですべてのセッションが閉じる", async () => {
   await waitForPaneCount(page, 2);
 
   await page.locator("[data-testid=close-all]").click();
+  // 押しただけでは閉じない。何が止まるかを数で出して、もう一度押させる
+  await expect(page.locator("[data-testid=close-all-confirm]")).toContainText(
+    "2 個のセッションを終了します"
+  );
+  expect(await listSessions(electronApp)).toHaveLength(2);
+
+  await page.locator("[data-testid=close-all-ok]").click();
   await waitForPaneCount(page, 0);
 
   expect(await listSessions(electronApp)).toHaveLength(0);
   await expect(page.locator("[data-testid=empty-state]")).toBeVisible();
+  await expect(page.locator("[data-testid=close-all-confirm]")).toBeHidden();
+});
+
+/**
+ * **押し間違いを取り消せる**（2026-10-09）。以前は確認なしで全ペインを終了し、
+ * 作業中の claude も途中で止まっていた。
+ */
+test("全終了の確認で「やめる」を押すと、何も閉じない", async () => {
+  await resetSessions(electronApp, page);
+  await createSession(page, { cwd: "C:\\app\\repo-a" });
+  await waitForPaneCount(page, 1);
+
+  await page.locator("[data-testid=close-all]").click();
+  await page.locator("[data-testid=close-all-cancel]").click();
+
+  await expect(page.locator("[data-testid=close-all-confirm]")).toBeHidden();
+  expect(await listSessions(electronApp)).toHaveLength(1);
+});
+
+/**
+ * **全終了を押し通した後でも取り返せる**（2026-10-09）。
+ *
+ * 確認は慣れると反射で押される。全終了の直前の構成を 1 つだけ控え、空の画面に
+ * 「直前の構成に戻す」を出す。戻すと自動復元と同じ経路を通る（会話の再開も）。
+ * **自動では戻さない** —— 全部閉じたら次の起動は空のまま、は変えない。
+ */
+test("全終了の後、直前の構成に戻せる", async () => {
+  await resetSessions(electronApp, page);
+  await createSession(page, { cwd: "C:\\app\\repo-a", title: "本体" });
+  await createSession(page, { cwd: "C:\\app\\repo-b", title: "受付" });
+  await waitForPaneCount(page, 2);
+
+  await page.locator("[data-testid=close-all]").click();
+  await page.locator("[data-testid=close-all-ok]").click();
+  await waitForPaneCount(page, 0);
+
+  const back = page.locator("[data-testid=restore-previous]");
+  await expect(back).toBeVisible();
+  await expect(back).toContainText("2");
+
+  await back.click();
+  await waitForPaneCount(page, 2);
+  expect((await listSessions(electronApp)).map((x) => x.title)).toEqual(["本体", "受付"]);
+  // 一度戻したら消える。二度押すと同じペインが二重にできる
+  await expect(back).toBeHidden();
+});
+
+test("全終了していなければ、直前の構成に戻すは出ない", async () => {
+  await resetSessions(electronApp, page);
+  await createSession(page, { cwd: "C:\\app\\repo-a" });
+  await waitForPaneCount(page, 1);
+  await page.locator("[data-testid=pane-close]").first().click();
+  await waitForPaneCount(page, 0);
+
+  await expect(page.locator("[data-testid=restore-previous]")).toBeHidden();
+});
+
+test("ペインが無いときに全終了を押しても、確認は出さない", async () => {
+  await resetSessions(electronApp, page);
+
+  await page.locator("[data-testid=close-all]").click();
+
+  await expect(page.locator("[data-testid=close-all-confirm]")).toBeHidden();
 });
 
 test("セッション追加ボタンでディレクトリを選ぶとセッションが起動する", async () => {
