@@ -93,8 +93,16 @@ export interface PaneRef {
 
 
 export interface TriggerWatcherDeps {
-  /** 題に当たるペインをすべて返す */
-  findPane: (title: string) => PaneRef[];
+  /** 題に当たるペインをすべて返す（`listPanes` を渡すなら要らない） */
+  findPane?: (title: string) => PaneRef[];
+  /**
+   * 全ペインの一覧。渡せば **1 回の check で 1 回だけ**呼び、題で絞って使い回す。
+   *
+   * 一覧は全ペインの画面を読んで状態を判定するので安くない。トリガーごとに
+   * 作り直すと、郵便受けの自動作成（トリガー数がペイン数とともに増える）で
+   * 費用がペイン数の 2 乗になった（20 ペインで 300ms ごとに 7.6ms）
+   */
+  listPanes?: () => PaneRef[];
   /** ペインへ文面を打つ。**確定はしない** */
   type: (id: string, text: string) => void;
   /** 確定の CR を送る。打つのとは別の出来事として扱う */
@@ -212,6 +220,9 @@ export class TriggerWatcher {
    */
   private retired = new Map<string, number>();
   private findPane: (title: string) => PaneRef[];
+  private listPanes: (() => PaneRef[]) | null;
+  /** この check で取った一覧。check の頭で取り直す */
+  private snapshot: PaneRef[] = [];
   private typeInto: (id: string, text: string) => void;
   private submitTo: (id: string) => void;
   private now: () => number;
@@ -222,6 +233,7 @@ export class TriggerWatcher {
 
   constructor({
     findPane,
+    listPanes,
     type,
     submit,
     now,
@@ -231,7 +243,9 @@ export class TriggerWatcher {
     onEvent,
   }: TriggerWatcherDeps) {
     this.onEvent = onEvent ?? (() => {});
-    this.findPane = findPane;
+    this.listPanes = listPanes ?? null;
+    this.findPane =
+      findPane ?? ((title) => this.snapshot.filter((pane) => pane.title === title));
     this.typeInto = type;
     this.submitTo = submit;
     this.now = now ?? (() => Date.now());
@@ -290,6 +304,7 @@ export class TriggerWatcher {
 
   /** 差分を読み、送れるものを送る。 */
   check(): void {
+    if (this.listPanes) this.snapshot = this.listPanes();
     for (const entry of this.entries) {
       entry.error = "";
       this.collect(entry);

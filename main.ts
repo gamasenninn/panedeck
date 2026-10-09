@@ -416,10 +416,11 @@ function syncMailboxes(
   watcher: TriggerWatcher,
   auto: Set<string>,
   manual: string[],
-  persisted: Record<string, number>
+  persisted: Record<string, number>,
+  sessions: Session[]
 ): void {
   const desired = desiredMailboxes({
-    titles: sessionManager.list().map((session) => session.title ?? ""),
+    titles: sessions.map((session) => session.title ?? ""),
     dir: mailboxDir(),
     taken: manual,
   });
@@ -444,20 +445,25 @@ function syncMailboxes(
   }
 }
 
+/**
+ * この見回りで取った一覧。**見回り 1 回につき 1 回だけ**作り、郵便受けの
+ * 突き合わせと全トリガーで使い回す（20 ペインで 22 回 → 1 回）
+ */
+let tickSessions: Session[] = [];
+
 function startTriggers(): void {
   const settings = readSettings(settingsPath());
   if (settings.triggers.length === 0 && !settings.mailboxes) return;
 
   triggerWatcher = new TriggerWatcher({
-    findPane: (title) =>
-      sessionManager
-        .list()
-        .filter((session) => session.title === title)
-        .map((session) => ({
-          id: session.id,
-          title: session.title,
-          status: session.status,
-        })),
+    // **一覧は見回りごとに 1 回だけ。** 届け先を探すたびに作り直すと、
+    // 全ペインの画面を読む判定がトリガー数 × ペイン数だけ走る
+    listPanes: () =>
+      tickSessions.map((session) => ({
+        id: session.id,
+        title: session.title,
+        status: session.status,
+      })),
     // 確定の CR はここで付ける。ひな型に改行を書かせない（#28 の信頼境界）
     // **打つことと確定することは別の出来事。** 一度にまとめて書くと
     // Claude Code は貼り付けと見て CR を改行にし、文面が入力欄に残る。
@@ -479,8 +485,9 @@ function startTriggers(): void {
   let saved = JSON.stringify(triggerWatcher.cursors());
   triggerTimer = setInterval(() => {
     if (!triggerWatcher) return;
+    tickSessions = sessionManager.list();
     if (settings.mailboxes) {
-      syncMailboxes(triggerWatcher, autoMailboxes, manual, settings.triggerCursors);
+      syncMailboxes(triggerWatcher, autoMailboxes, manual, settings.triggerCursors, tickSessions);
     }
     triggerWatcher.check();
 

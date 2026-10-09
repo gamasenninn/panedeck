@@ -1150,6 +1150,71 @@ test.describe("見張りを外す", () => {
   });
 });
 
+/**
+ * **一覧は 1 回の見回りで 1 回だけ作る**（2026-10-10）。
+ *
+ * 届け先を探すたびに一覧（全ペインの画面を読んで状態を判定する）を作り直して
+ * いた。郵便受けの自動作成でトリガー数がペイン数とともに増えたので、費用が
+ * **ペイン数の 2 乗**になった。実測: 20 ペインで 300ms ごとに 22 回・7.6ms
+ * （1 コアの 2.5%、何もしていなくても常に）。
+ */
+test.describe("一覧は見回りごとに 1 回", () => {
+  test("トリガーがいくつあっても、一覧は 1 回の check で 1 回だけ取る", () => {
+    let calls = 0;
+    const watcher = new TriggerWatcher({
+      listPanes: () => {
+        calls += 1;
+        return [
+          { id: "s1", title: "a", status: "ready" },
+          { id: "s2", title: "b", status: "ready" },
+        ];
+      },
+      type: () => {},
+      submit: () => {},
+    });
+    for (const title of ["a", "b", "c"]) {
+      watcher.add({ watch: tempFile(""), pane: { title }, send: "{count}" });
+    }
+
+    watcher.check();
+
+    expect(calls).toBe(1);
+  });
+
+  test("一覧から題で届け先を選ぶ", () => {
+    const file = tempFile("");
+    const sent: string[] = [];
+    const watcher = new TriggerWatcher({
+      listPanes: () => [
+        { id: "s1", title: "a", status: "ready" },
+        { id: "s2", title: "b", status: "ready" },
+      ],
+      type: (id: string) => sent.push(id),
+      submit: () => {},
+    });
+    watcher.add({ watch: file, pane: { title: "b" }, send: "{count}" });
+
+    fs.appendFileSync(file, '{"id":"m1"}\n');
+    watcher.check();
+
+    expect(sent).toEqual(["s2"]);
+  });
+
+  test("一覧に無い題なら、これまでどおり理由を出す", () => {
+    const watcher = new TriggerWatcher({
+      listPanes: () => [{ id: "s1", title: "a", status: "ready" }],
+      type: () => {},
+      submit: () => {},
+    });
+    watcher.add({ watch: tempFile(""), pane: { title: "居ない" }, send: "{count}" });
+    const file = watcher.state()[0].watch;
+    fs.appendFileSync(file, '{"id":"m1"}\n');
+    watcher.check();
+
+    expect(watcher.state()[0].error).toContain("ペインがありません");
+  });
+});
+
 test.describe("変わっていなければ読まない", () => {
   function countingSetup(file: string, options: Record<string, unknown> = {}) {
     let reads = 0;
