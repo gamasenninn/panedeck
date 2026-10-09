@@ -23,6 +23,14 @@ export interface EventRow {
   [key: string]: unknown;
 }
 
+import { safeIdOf } from "./trigger-template";
+
+/** 郵便受け 1 つ分の中身（ファイルと、その行） */
+export interface MailboxContent {
+  file: string;
+  lines: string[];
+}
+
 export type DeliveryStatus = "delivered" | "typed" | "not-executed" | "not-found";
 
 export interface DeliveryResult {
@@ -43,6 +51,12 @@ export interface DeliveryResult {
    * 見当違いの理由を並べた）
    */
   untracked: boolean;
+  /** 郵便受けのどこに書かれていたか（行は 1 始まり）。どこにも無ければ undefined */
+  writtenIn?: { file: string; line: number };
+  /** 探した郵便受けの数。0 なら「書かれていない」とは言い切れない */
+  searchedMailboxes: number;
+  /** 書かれた行の id が規則から外れている（英数字とハイフンで 40 字まで）。配られない */
+  badId: boolean;
 }
 
 /** 見つからないときに手がかりとして見せる出来事 */
@@ -51,12 +65,29 @@ const HINT_LIMIT = 5;
 /** 手がかりに出す止まりの知らせの古さの上限。古いものは今の配達と関係が無い */
 const HINT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** 配った・打った・諦めたの行で、id を持たないもの（ids が入る前の記録） */
-function isUntracked(row: EventRow): boolean {
-  return (
-    (row.kind === "delivery" || row.kind === "typed" || row.kind === "not-executed") &&
-    !Array.isArray(row.ids)
-  );
+/** 行の id（形を問わず、文字列か数値なら）。JSON でなければ null */
+function rawIdOf(line: string): string | null {
+  try {
+    const parsed = JSON.parse(line);
+    const id = parsed && typeof parsed === "object" ? parsed.id : undefined;
+    return typeof id === "string" || typeof id === "number" ? String(id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * その郵便受けで、記録に id が残っている最初の行（0 始まり）。無ければ -1。
+ *
+ * これより前の行は、**id を記録しない頃の PaneDeck が配った**かもしれない。
+ * 以前は記録の 30 日の中に古い行が 1 行でもあれば毎回そう言い、今日書いた id でも
+ * 見当違いの方へ誘っていた（受付の指摘）
+ */
+function firstTrackedLine(lines: string[], tracked: Set<string>): number {
+  return lines.findIndex((line) => {
+    const id = rawIdOf(line);
+    return id !== null && tracked.has(id);
+  });
 }
 
 function carries(row: EventRow, id: string): boolean {
@@ -70,7 +101,8 @@ function carries(row: EventRow, id: string): boolean {
 export function lookupDelivery(
   rows: EventRow[],
   id: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  mailboxes: MailboxContent[] = []
 ): DeliveryResult {
   const mine = rows
     .filter((row) => carries(row, id))
@@ -82,7 +114,33 @@ export function lookupDelivery(
       .filter((row) => now - Date.parse(row.at) <= HINT_WINDOW_MS)
       .sort((a, b) => a.at.localeCompare(b.at))
       .slice(-HINT_LIMIT);
-    return { status: "not-found", hints, untracked: rows.some(isUntracked) };
+
+    // **郵便受けから探す**。どこにも無ければ「そもそも書かれていない」と言い切れる
+    let writtenIn: DeliveryResult["writtenIn"];
+    let badId = false;
+    let untracked = false;
+    for (const box of mailboxes) {
+      const index = box.lines.findIndex((line) => rawIdOf(line) === id);
+      if (index === -1) continue;
+      writtenIn = { file: box.file, line: index + 1 };
+      badId = safeIdOf(box.lines[index]) === null;
+
+      const tracked = new Set(
+        rows.flatMap((row) => (Array.isArray(row.ids) ? (row.ids as string[]) : []))
+      );
+      const first = firstTrackedLine(box.lines, tracked);
+      untracked = first !== -1 && index < first;
+      break;
+    }
+
+    return {
+      status: "not-found",
+      hints,
+      untracked,
+      writtenIn,
+      searchedMailboxes: mailboxes.length,
+      badId,
+    };
   }
 
   const last = mine[mine.length - 1];
@@ -95,6 +153,8 @@ export function lookupDelivery(
     batch: Array.isArray(last.ids) ? last.ids.length : undefined,
     hints: [],
     untracked: false,
+    searchedMailboxes: mailboxes.length,
+    badId: false,
   };
 
   if (last.kind === "delivery") {

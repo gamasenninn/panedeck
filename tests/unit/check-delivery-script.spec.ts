@@ -14,10 +14,15 @@ import { spawnSync } from "child_process";
  */
 const SCRIPT = path.join(__dirname, "..", "..", "scripts", "check-delivery.mjs");
 
-function workspace(files: Record<string, unknown[]>) {
+function workspace(files: Record<string, unknown[]>, mailboxes: Record<string, unknown[]> = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "panedeck-check-"));
   const logs = path.join(dir, "logs");
   fs.mkdirSync(logs);
+  const boxes = path.join(dir, "mailbox");
+  fs.mkdirSync(boxes);
+  for (const [name, rows] of Object.entries(mailboxes)) {
+    fs.writeFileSync(path.join(boxes, name), rows.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+  }
   for (const [name, rows] of Object.entries(files)) {
     fs.writeFileSync(path.join(logs, name), rows.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
   }
@@ -48,6 +53,23 @@ test("届いた便は、日本時間で届いた時刻と待ちを出して 0 �
   expect(out.stdout).toContain("受付");
   expect(out.stdout).toContain("2026/10/10 3:02:54"); // UTC 18:02 → 日本時間 3:02
   expect(out.stdout).toContain("923");
+  expect(out.stdout).toContain("Asia/Tokyo");
+});
+
+/**
+ * ★ **submits は Enter を押した回数**で、押し直しの回数ではない（受付の指摘、2026-10-10）。
+ * 1 は「1 回押して通った」= 押し直し 0 回。以前は「押し直し 1 回」と出していた
+ */
+test("Enter の回数と押し直しの回数を取り違えない", () => {
+  const settings = workspace({
+    "events-20261010.jsonl": [
+      { at: "2026-10-09T18:00:00Z", kind: "delivery", title: "受付", ids: ["once"], waitedMs: 900, submits: 1 },
+      { at: "2026-10-09T18:01:00Z", kind: "delivery", title: "受付", ids: ["thrice"], waitedMs: 9000, submits: 3 },
+    ],
+  });
+
+  expect(run(settings, "once").stdout).toContain("Enter 1 回（押し直し 0 回）");
+  expect(run(settings, "thrice").stdout).toContain("Enter 3 回（押し直し 2 回）");
 });
 
 /** ファイルをまたいでも見つかる。どの日付を見るかを人が決めなくてよい */
@@ -68,7 +90,7 @@ test("書いた日と届いた日が違っても見つける", () => {
 test("見つからなければ、考えられる理由と手がかりを出して 1 で終わる", () => {
   const settings = workspace({
     "events-20261010.jsonl": [
-      { at: "2026-10-09T18:00:00Z", kind: "trigger-capped", title: "受付", count: 6, minutes: 10 },
+      { at: new Date().toISOString(), kind: "trigger-capped", title: "受付", count: 6, minutes: 10 },
     ],
   });
 
@@ -79,19 +101,63 @@ test("見つからなければ、考えられる理由と手がかりを出し�
   expect(out.stdout).toContain("trigger-capped");
 });
 
-test("id を記録しない頃の便かもしれないときは、それを真っ先に言う", () => {
-  const settings = workspace({
-    "events-20261008.jsonl": [{ at: "2026-10-08T14:22:56Z", kind: "delivery", title: "受付", count: 1 }],
-  });
-
-  const out = run(settings, "mb-honntai-5");
-
+/**
+ * ★ **道具が機械で確かめられることを先にやり、次の手を 1 つ出す**（受付の指摘、2026-10-10）。
+ * 以前は起きうることを並べるだけで、しかもそれは人が見る画面（ツールバー・保留 N）の
+ * 話だった。ペインの中のエージェントには確かめようがない
+ */
+test("どの郵便受けにも書かれていなければ、そう言い切り、綴りを確かめる手を出す", () => {
+  const settings = workspace({}, { "受付.jsonl": [{ id: "mb-1" }] });
+  const out = run(settings, "mb-typo");
   expect(out.status).toBe(1);
-  const lines = out.stdout.split("\n");
-  const first = lines.findIndex((l) => l.includes("id を記録しない"));
-  const busy = lines.findIndex((l) => l.includes("作業中"));
-  expect(first).toBeGreaterThan(-1);
-  expect(first).toBeLessThan(busy);
+  expect(out.stdout).toContain("どこにも書かれていません");
+  expect(out.stdout).toContain("次の手");
+  expect(out.stdout).toContain("綴り");
+  // 探したファイル名を並べる（宛先の書き間違いに気づける・受付の提案）
+  expect(out.stdout).toContain("受付.jsonl");
+  // どのファイルを読み直すかを書く
+  expect(out.stdout).toContain("宛先の郵便受けの末尾");
+});
+
+test("書かれていて止まりの知らせが無ければ、無しと明記し、待ってからもう一度の手を出す", () => {
+  const settings = workspace({}, { "受付.jsonl": [{ id: "mb-1" }, { id: "mb-2" }] });
+  const out = run(settings, "mb-2");
+  expect(out.stdout).toContain("受付.jsonl の 2 行目");
+  expect(out.stdout).toContain("止まりの知らせ（この 24 時間）  無し");
+  expect(out.stdout).toContain("数分待って");
+  // 人が見る画面の話は出さない（エージェントには確かめようがない）
+  expect(out.stdout).not.toContain("ツールバー");
+});
+
+test("書かれた id が規則から外れていれば、配られないと言い切る", () => {
+  const settings = workspace({}, { "受付.jsonl": [{ id: "a b" }] });
+  const out = run(settings, "a b");
+  expect(out.stdout).toContain("規則から外れて");
+  expect(out.stdout).toContain("書き直す");
+});
+
+test("id を記録し始める前の行なら、この道具では確かめられないと言う", () => {
+  const settings = workspace(
+    { "events-20261010.jsonl": [{ at: "2026-10-09T18:00:00Z", kind: "delivery", title: "受付", ids: ["mb-3"] }] },
+    { "受付.jsonl": [{ id: "mb-1" }, { id: "mb-2" }, { id: "mb-3" }] }
+  );
+  const out = run(settings, "mb-1");
+  expect(out.stdout).toContain("id を記録し始める前");
+  // 「確かめられない」は別の終わり方。エージェントが機械で分けられる（受付の提案）
+  expect(out.status).toBe(3);
+});
+
+/** 古い行がどこかにあるだけでは言わない（以前は毎回出ていた） */
+test("今日書いた id には、id を記録しない頃とは言わない", () => {
+  const settings = workspace(
+    {
+      "events-20261008.jsonl": [{ at: "2026-10-08T14:22:56Z", kind: "delivery", title: "受付", count: 1 }],
+      "events-20261010.jsonl": [{ at: "2026-10-09T18:00:00Z", kind: "delivery", title: "受付", ids: ["mb-1"] }],
+    },
+    { "受付.jsonl": [{ id: "mb-1" }, { id: "mb-2" }] }
+  );
+  const out = run(settings, "mb-2");
+  expect(out.stdout).not.toContain("id を記録し始める前");
 });
 
 test("id を渡さなければ使い方を出して 2 で終わる", () => {

@@ -10,6 +10,8 @@
  * てよい。時刻はこのパソコンの時刻（日本時間）で出す。
  *
  * 終わり方: 0 = 届いた / 1 = まだ・届かなかった・見つからない / 2 = 使い方の誤り
+ *         3 = id を記録し始める前の便で、この道具では確かめられない
+ *         （1 と分けたのは、エージェントが機械で見分けられるように。受付の提案）
  *
  * 判断は lib/delivery-lookup.ts（ビルド済みの dist を読む）。ここは読むだけ。
  */
@@ -55,28 +57,73 @@ for (const name of files.sort()) {
 }
 
 const local = (at) => (at ? new Date(at).toLocaleString("ja-JP") : "-");
-const result = lookupDelivery(rows, id);
+// 時刻がどの時間帯かを添える（見た人が UTC と迷わないように）
+const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// 郵便受けも読む。記録に無いとき、**道具が機械で確かめられることを先にやる**
+// （受付の指摘、2026-10-10）。どこにも書かれていなければ、そう言い切れる
+const mailboxDir = path.join(path.dirname(settingsPath), "mailbox");
+const mailboxes = [];
+try {
+  for (const name of fs.readdirSync(mailboxDir).filter((n) => n.endsWith(".jsonl"))) {
+    const file = path.join(mailboxDir, name);
+    const lines = fs.readFileSync(file, "utf8").split("\n").filter((l) => l.trim() !== "");
+    mailboxes.push({ file, lines });
+  }
+} catch {
+  // 郵便受けが無い（Tealus の便だけ使っている）。記録だけで答える
+}
+
+const result = lookupDelivery(rows, id, Date.now(), mailboxes);
 
 if (result.status === "not-found") {
   console.log(`${id}: 見つかりません（記録 ${files.length} 日分を全部見ました）`);
-  console.log("  考えられる理由:");
-  if (result.untracked) {
-    // ★ 真っ先に言う。届いているのに「作業中・上限…」と並べると見当違いの方へ行く
-    console.log("  - id を記録しない頃（2026-10-09 より前）の PaneDeck が配った便かもしれない。");
-    console.log("    記録には id が無いので、この道具では探せない（時刻と件数で突き合わせる）");
+
+  // ★ 人が見る画面（ツールバー・保留 N）の話は出さない。ペインの中のエージェントには
+  // 確かめようがない。道具が確かめたことと、次の手を 1 つだけ出す
+  let next;
+  let code = 1;
+  if (result.writtenIn) {
+    const where = `${path.basename(result.writtenIn.file)} の ${result.writtenIn.line} 行目`;
+    console.log(`  郵便受け  ${where}に書かれている`);
+  } else if (result.searchedMailboxes > 0) {
+    // 探したファイル名を並べる。宛先の書き間違いに気づける（受付の提案）
+    const names = mailboxes.map((box) => path.basename(box.file)).join("、");
+    console.log(`  郵便受け  どこにも書かれていません（${result.searchedMailboxes} 個を探した: ${names}）`);
+    next =
+      "id の綴りを確かめる。書いたつもりなら、宛先の郵便受けの末尾を tail -n 1 で読み直し、" +
+      "無ければ書き直す";
+  } else {
+    console.log("  郵便受け  無し（記録だけを見た）");
   }
-  console.log("  - 受け手が作業中で、区切りを待っている（ペインに「保留 N」が出ている）");
-  console.log("  - 上限で止まっている（ツールバーに「配達を再開」が出ている）");
-  console.log("  - id が規則から外れていて配られなかった（英数字とハイフンで 40 字まで）");
-  console.log("  - 書いた行が改行で終わっていない / 宛先の郵便受けが違う");
-  if (result.hints.length > 0) {
-    console.log("  この 24 時間の止まりの知らせ:");
+
+  if (result.writtenIn && result.badId) {
+    console.log("  id        規則から外れているので配られない（英数字とハイフンで 40 字まで）");
+    next = "規則どおりの id で書き直す";
+  } else if (result.writtenIn && result.untracked) {
+    console.log("  この行は id を記録し始める前のもの。届いていても、この道具では確かめられない");
+    next = "時刻と件数で記録を突き合わせる。急ぐなら人（小野さん）に聞く";
+    code = 3;
+  }
+
+  if (result.hints.length === 0) {
+    console.log("  止まりの知らせ（この 24 時間）  無し");
+  } else {
+    console.log("  止まりの知らせ（この 24 時間）");
     for (const hint of result.hints) {
       const reason = typeof hint.reason === "string" ? `  ${hint.reason}` : "";
       console.log(`    ${local(hint.at)}  ${hint.kind}  ${hint.title ?? ""}${reason}`);
     }
   }
-  process.exit(1);
+
+  if (!next) {
+    next =
+      result.hints.length > 0
+        ? "止まりの知らせを人（小野さん）に伝える。上限なら人が「配達を再開」を押す"
+        : "受け手が作業中で区切りを待っている見込み。数分待って、もう一度この道具を実行する。" +
+          "それでも見つからなければ、人（小野さん）に伝える";
+  }
+  console.log(`  次の手    ${next}`);
+  process.exit(code);
 }
 
 const label = {
@@ -86,11 +133,18 @@ const label = {
 }[result.status];
 
 console.log(`${id}: ${label}`);
+console.log(`  （時刻は ${zone}）`);
 console.log(`  宛先      ${result.title ?? "-"}`);
 console.log(`  打った    ${local(result.typedAt)}`);
 if (result.deliveredAt) console.log(`  届いた    ${local(result.deliveredAt)}`);
 if (result.waitedMs !== undefined) {
-  console.log(`  待ち      ${result.waitedMs}ms・押し直し ${result.submits ?? "-"} 回`);
+  // ★ submits は Enter を押した回数。1 は「1 回で通った」= 押し直し 0 回
+  // （以前は「押し直し 1 回」と出していた。受付の指摘で直した）
+  const presses =
+    typeof result.submits === "number"
+      ? `Enter ${result.submits} 回（押し直し ${Math.max(0, result.submits - 1)} 回）`
+      : "Enter -";
+  console.log(`  待ち      ${result.waitedMs}ms・${presses}`);
 }
 if (result.batch && result.batch > 1) console.log(`  一緒に届いた便  ${result.batch} 通`);
 process.exit(result.status === "delivered" ? 0 : 1);

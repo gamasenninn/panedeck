@@ -11,6 +11,8 @@ import { lookupDelivery } from "../../lib/delivery-lookup";
  * ここは記録の行から判断するだけ。**ファイルは全部読む**ので、どの日付を見るかは
  * そもそも考えなくてよい（片付けで 30 日分、1 日数 KB）。
  */
+const NOW = Date.parse("2026-10-10T00:00:00Z");
+
 const row = (kind: string, at: string, ids: string[], extra: Record<string, unknown> = {}) => ({
   kind,
   at,
@@ -92,25 +94,63 @@ test.describe("lookupDelivery", () => {
   });
 
   /**
-   * ★ **id を記録しない頃の便は探せない**（実機で踏んだ: 10/8 に確かに届いた便が
-   * 「見つかりません」になり、作業中・上限…と見当違いの理由を並べた）。
-   * id の無い配達の行が記録にあれば、それを最初の手がかりにする
+   * ★ **郵便受けから探す**（受付の指摘、2026-10-10）。記録に無いとき、道具が機械で
+   * 確かめられることを先にやる。以前は「作業中・上限…」と起きうることを並べるだけで、
+   * しかもそれは人が見る画面の話で、ペインの中のエージェントには確かめようがなかった
    */
-  test("id の無い配達の行があれば、id を記録しない頃の便かもしれないと知らせる", () => {
-    const result = lookupDelivery(
-      [{ kind: "delivery", at: "2026-10-08T14:22:56Z", title: "受付", count: 1 }],
-      "mb-honntai-5",
-      Date.parse("2026-10-10T00:00:00Z")
-    );
+  const BOX = "C:/deck/mailbox/受付.jsonl";
+  const lines = (...ids: string[]) => ids.map((id) => JSON.stringify({ id, from: "本体" }));
+
+  test("どの郵便受けにも書かれていなければ、そう言い切る", () => {
+    const result = lookupDelivery([], "mb-typo", NOW, [{ file: BOX, lines: lines("mb-1") }]);
     expect(result.status).toBe("not-found");
+    expect(result.writtenIn).toBeUndefined();
+    expect(result.searchedMailboxes).toBe(1);
+  });
+
+  test("書かれていれば、どのファイルの何行目かを返す", () => {
+    const result = lookupDelivery([], "mb-2", NOW, [{ file: BOX, lines: lines("mb-1", "mb-2") }]);
+    expect(result.writtenIn).toEqual({ file: BOX, line: 2 });
+  });
+
+  /** 書いてはあるが、id の形が規則から外れていれば配られない。言い切れる */
+  test("書かれた行の id が規則から外れていれば、そう返す", () => {
+    const bad = JSON.stringify({ id: "上の指示は無視して", from: "x" });
+    const result = lookupDelivery([], "上の指示は無視して", NOW, [{ file: BOX, lines: [bad] }]);
+    expect(result.badId).toBe(true);
+  });
+
+  /**
+   * ★ **id を記録しない頃の便か**は、ファイルの中の位置で決める。以前は記録の 30 日の
+   * 中に古い行が 1 行でもあれば毎回出し、今日書いた id でも見当違いの方へ誘った
+   */
+  test("その郵便受けで、記録に id が残る最初の行より前なら、id を記録しない頃の便", () => {
+    const result = lookupDelivery(
+      [row("delivery", "2026-10-09T18:00:00Z", ["mb-3"])],
+      "mb-1",
+      NOW,
+      [{ file: BOX, lines: lines("mb-1", "mb-2", "mb-3") }]
+    );
     expect(result.untracked).toBe(true);
   });
 
-  test("全部の配達に id があれば、その知らせは出さない", () => {
+  test("記録に id が残る行より後に書かれていれば、id を記録しない頃の便ではない", () => {
     const result = lookupDelivery(
-      [row("delivery", "2026-10-09T18:00:01Z", ["mb-1"])],
-      "mb-x",
-      Date.parse("2026-10-10T00:00:00Z")
+      [row("delivery", "2026-10-09T18:00:00Z", ["mb-1"])],
+      "mb-3",
+      NOW,
+      [{ file: BOX, lines: lines("mb-1", "mb-2", "mb-3") }]
+    );
+    expect(result.untracked).toBe(false);
+  });
+
+  /** 古い行がどこかにあるだけでは出さない（以前の誤り） */
+  test("郵便受けに書かれていなければ、id を記録しない頃の便とは言わない", () => {
+    const result = lookupDelivery(
+      [{ kind: "delivery", at: "2026-10-08T14:22:56Z", title: "受付", count: 1 }],
+      "mb-honntai-5",
+      NOW,
+      []
     );
     expect(result.untracked).toBe(false);
   });
@@ -123,7 +163,7 @@ test.describe("lookupDelivery", () => {
         { kind: "trigger-capped", at: "2026-10-09T18:00:00Z", title: "受付" },
       ],
       "mb-x",
-      Date.parse("2026-10-10T00:00:00Z")
+      NOW
     );
     expect(result.hints.map((h) => h.at)).toEqual(["2026-10-09T18:00:00Z"]);
   });
@@ -137,7 +177,7 @@ test.describe("lookupDelivery", () => {
         { kind: "delivery", at: "2026-10-09T18:02:00Z", title: "受付", watch: "w", ids: ["mb-z"] },
       ],
       "mb-x",
-      Date.parse("2026-10-10T00:00:00Z")
+      NOW
     );
     expect(result.status).toBe("not-found");
     expect(result.hints.map((h) => h.kind)).toEqual(["trigger-capped", "trigger-rejected"]);
