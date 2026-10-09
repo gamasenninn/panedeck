@@ -1,5 +1,9 @@
-﻿import { test, expect } from "@playwright/test";
-import { SessionManager } from "../../lib/session-manager";
+import { test, expect } from "@playwright/test";
+import {
+  SessionManager,
+  KILL_AFTER_EXIT_MS,
+  KILL_SETTLE_MS,
+} from "../../lib/session-manager";
 import { STATUS, QUIET_MS } from "../../lib/status-detector";
 import { createFakePtyFactory, createFakeClock } from "./helpers/fake-pty";
 
@@ -279,13 +283,136 @@ test.describe("close", () => {
   });
 
   test("closeAll は全部閉じて件数を返す", () => {
-    const { manager, ptyFactory } = setup();
+    const { manager } = setup();
     manager.create({ cwd: "a" });
     manager.create({ cwd: "b" });
 
     expect(manager.closeAll()).toBe(2);
+    // 一覧からはその場で消える。kill は 1 本ずつ流れる（下の describe）
     expect(manager.list()).toHaveLength(0);
-    ptyFactory.created.forEach((pty) => expect(pty.killed).toBe(true));
+  });
+});
+
+/** 差し込む時計。`advance` で、期限の来たものを順に走らせる */
+function manualTimers() {
+  let now = 0;
+  const queue: Array<{ at: number; fn: () => void }> = [];
+  return {
+    schedule: (fn: () => void, ms: number) => {
+      queue.push({ at: now + ms, fn });
+    },
+    advance(ms: number) {
+      now += ms;
+      for (;;) {
+        queue.sort((a, b) => a.at - b.at);
+        const due = queue.findIndex((t) => t.at <= now);
+        if (due < 0) break;
+        queue.splice(due, 1)[0].fn();
+      }
+    },
+  };
+}
+
+/**
+ * ★ **kill は 1 本ずつ**（#38 の正体、2026-10-09）。
+ *
+ * node-pty 1.1.0 は、ConPTY を 1 本 kill している最中に次を kill すると
+ * **ネイティブで落ちる**（0xC0000005）。素の node で再現した: 2 本を続けざまに
+ * kill すると 5〜18 回で落ち、**1 本目の onExit を待つ / 200ms 空ける**と
+ * 250 回とも無事だった。全終了もアプリの終了も全ペインを続けざまに kill するので、
+ * 押した瞬間に PaneDeck ごと落ちたり、閉じるときに固まったりしていた。
+ */
+test.describe("kill は 1 本ずつ", () => {
+  function killSetup() {
+    const timers = manualTimers();
+    const ctx = setup({ schedule: timers.schedule });
+    return { ...ctx, timers };
+  }
+
+  test("1 本だけなら、これまでどおりその場で kill する", () => {
+    const { manager, ptyFactory } = killSetup();
+    const a = manager.create({ cwd: "a" });
+    manager.close(a.id);
+    expect(ptyFactory.last()!.killed).toBe(true);
+  });
+
+  test("続けて閉じても、2 本目は 1 本目の終了を待つ", () => {
+    const { manager, ptyFactory } = killSetup();
+    manager.create({ cwd: "a" });
+    manager.create({ cwd: "b" });
+
+    manager.closeAll();
+    const [first, second] = ptyFactory.created;
+
+    expect(first.killed).toBe(true);
+    expect(second.killed).toBe(false);
+  });
+
+  test("1 本目の onExit から少し置いて、2 本目を kill する", () => {
+    const { manager, ptyFactory, timers } = killSetup();
+    manager.create({ cwd: "a" });
+    manager.create({ cwd: "b" });
+    manager.closeAll();
+    const [first, second] = ptyFactory.created;
+
+    first.emitExit(-1073741510);
+    timers.advance(KILL_AFTER_EXIT_MS - 1);
+    expect(second.killed).toBe(false);
+    timers.advance(1);
+    expect(second.killed).toBe(true);
+  });
+
+  /** 知らせが来ないこともある。待ち続けると、残りのシェルを殺しそびれる */
+  test("onExit が来なくても、一定時間で次を kill する", () => {
+    const { manager, ptyFactory, timers } = killSetup();
+    manager.create({ cwd: "a" });
+    manager.create({ cwd: "b" });
+    manager.closeAll();
+
+    timers.advance(KILL_SETTLE_MS);
+    expect(ptyFactory.created[1].killed).toBe(true);
+  });
+
+  test("3 本でも順に全部 kill する", () => {
+    const { manager, ptyFactory, timers } = killSetup();
+    manager.create({ cwd: "a" });
+    manager.create({ cwd: "b" });
+    manager.create({ cwd: "c" });
+    manager.closeAll();
+
+    for (const pty of ptyFactory.created) {
+      expect(pty.killed).toBe(true);
+      pty.emitExit(0);
+      timers.advance(KILL_AFTER_EXIT_MS);
+    }
+  });
+
+  /** アプリを閉じるときに待つ。待たずに終わると、殺しそびれたシェルが残る */
+  test("drained は、順番待ちの kill が全部済んだら解決する", async () => {
+    const { manager, ptyFactory, timers } = killSetup();
+    manager.create({ cwd: "a" });
+    manager.create({ cwd: "b" });
+    manager.closeAll();
+
+    let done = false;
+    const drained = manager.drained().then(() => {
+      done = true;
+    });
+
+    ptyFactory.created[0].emitExit(0);
+    timers.advance(KILL_AFTER_EXIT_MS);
+    await Promise.resolve();
+    expect(done).toBe(false); // 2 本目は kill しただけ。まだ済んでいない
+
+    ptyFactory.created[1].emitExit(0);
+    timers.advance(KILL_AFTER_EXIT_MS);
+    await drained;
+    expect(done).toBe(true);
+  });
+
+  test("何も待っていなければ drained はすぐ解決する", async () => {
+    const { manager } = killSetup();
+    await expect(manager.drained()).resolves.toBeUndefined();
   });
 });
 

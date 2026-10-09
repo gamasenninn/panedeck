@@ -32,6 +32,8 @@ node-pty + xterm.js。
   数え方、CSI の中間バイト — 詳細は HANDOVER
 - **pty を操作する前に状態を見る。** 終了済みセッションへの `resize()` は例外を
   投げ、メインプロセスの未処理例外になる
+- **pty は 1 本ずつ kill する。** node-pty は ConPTY を続けざまに kill するとネイティブで
+  落ちる（#38）。`SessionManager` が順番待ちを持っているので、pty の `kill()` を直接呼ばない
 - E2E の `resetSessions()` には必ず `page` を渡す（渡さないと残骸ペインを掴む）
 - E2E で `launchApp()` に設定パスを渡さないときは使い捨ての一時ディレクトリが
   使われる。**実 userData を触らせないこと**

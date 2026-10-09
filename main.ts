@@ -538,6 +538,25 @@ function stopTriggers(): void {
   triggerWatcher = null;
 }
 
+/**
+ * kill の順番待ちが済むまで待つ上限 (ms)（#38）。
+ *
+ * kill は 1 本ずつ流れる（SessionManager）。待たずに終わると、まだ kill して
+ * いないシェルが残り、kill の最中に終わると閉じきらずに固まることもあった。
+ * ただし onExit が届かなくても**終わらないことは無いように**、上限を置く
+ */
+const QUIT_DRAIN_MS = 5_000;
+
+function drainKills(): Promise<void> {
+  return Promise.race([
+    sessionManager.drained(),
+    new Promise<void>((resolve) => setTimeout(resolve, QUIT_DRAIN_MS)),
+  ]);
+}
+
+/** 順番待ちを待ち終えたか。will-quit を一度だけ引き止めるため */
+let drainedForQuit = false;
+
 app.on("window-all-closed", () => {
   stopTriggers();
   // 書き残しを先に吐き出してからセッションを畳む
@@ -545,15 +564,31 @@ app.on("window-all-closed", () => {
   sessionManager.closeAll();
   // 裏のコマンドも道連れにする。残すと、閉じたのに動き続ける（#29）
   serviceRunner?.stopAll();
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin") {
+    void drainKills().then(() => {
+      drainedForQuit = true;
+      app.quit();
+    });
+  }
 });
 
-app.on("will-quit", () => {
+app.on("will-quit", (event) => {
   stopTriggers();
   logWriter?.closeAll();
   sessionManager.closeAll();
   // window-all-closed を通らない終わり方（macOS の終了など）でも必ず止める
   serviceRunner?.stopAll();
+
+  // ★ kill の順番待ちが済むまで引き止める（#38）。一度待ったら通す。
+  // **引き止めた後は `app.exit()` で終える。** `app.quit()` で終わり直そうと
+  // すると、閉じずに固まった（Playwright の close も返らなくなった）
+  if (!drainedForQuit) {
+    event.preventDefault();
+    void drainKills().then(() => {
+      drainedForQuit = true;
+      app.exit(0);
+    });
+  }
 });
 
 /** ダイアログの親。まだウィンドウが無い場面では渡さない */

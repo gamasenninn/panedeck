@@ -71,6 +71,11 @@ export interface SessionManagerDeps {
    */
   isProcessAlive?: (pid: number) => boolean;
   /**
+   * 時間を置いて呼ぶ（#38 の kill の順番待ち）。テストから実時間を待たずに
+   * 進められるように差し替えられる
+   */
+  schedule?: (fn: () => void, ms: number) => void;
+  /**
    * 会話の id を作る（#33）。テストから差し替えられるように注入する。
    *
    * 既定は `crypto.randomUUID()`。claude は有効な UUID を要求する。
@@ -93,6 +98,17 @@ function processIsAlive(pid: number): boolean {
  * Electron にも node-pty にも直接依存しない。pty の生成は `ptyFactory` として
  * 注入されるので、テストではフェイクを渡して実プロセス無しに検証できる。
  */
+/**
+ * kill の後、onExit が届いてから次を kill するまでの間 (ms)（#38）。
+ *
+ * node-pty 1.1.0 は ConPTY を続けざまに kill するとネイティブで落ちる。
+ * 素の node での実測: 続けざまは 5〜18 回で落ち、onExit を待てば 250 回とも無事
+ */
+export const KILL_AFTER_EXIT_MS = 50;
+
+/** onExit が来ないとき、次を kill するまで待つ上限 (ms)。200ms 空けでも無事だった */
+export const KILL_SETTLE_MS = 1_000;
+
 export class SessionManager {
   ptyFactory: (options: PtyFactoryOptions) => Pty;
   now: () => number;
@@ -107,6 +123,14 @@ export class SessionManager {
   sessions = new Map<string, LiveSession>();
   nextId = 1;
 
+  /**
+   * kill の順番待ち（#38）。**1 本ずつ流す。** 空ならその場で kill する
+   */
+  private killQueue: Pty[] = [];
+  private killing = false;
+  private drainWaiters: Array<() => void> = [];
+  private schedule: (fn: () => void, ms: number) => void;
+
   dataHandlers: Array<(id: string, data: string) => void> = [];
   exitHandlers: Array<(id: string, exitCode: number) => void> = [];
 
@@ -117,7 +141,11 @@ export class SessionManager {
     isProcessAlive = processIsAlive,
     screenFactory,
     newSessionId = () => randomUUID(),
+    schedule = (fn, ms) => {
+      setTimeout(fn, ms);
+    },
   }: SessionManagerDeps) {
+    this.schedule = schedule;
     this.ptyFactory = ptyFactory;
     this.now = now;
     this.maxLogBytes = maxLogBytes;
@@ -349,7 +377,7 @@ export class SessionManager {
     // **終了済みには触らない。** 死んだ ConPTY への操作は返ってこないことが
     // あり、メインプロセスが固まる（#16 で resize に入れたのと同じ守り）。
     // #33 の退避は「終了直後」に閉じるので、ここを通るのが日常になった
-    if (!session.exited) session.pty.kill();
+    if (!session.exited) this.enqueueKill(session.pty);
     // 画面は行数ぶんの記憶を抱えるので、閉じたら必ず手放す
     this.screens.get(id)?.dispose();
     this.screens.delete(id);
@@ -358,6 +386,54 @@ export class SessionManager {
   }
 
   /** @returns 閉じた数 */
+  /**
+   * 順番待ちの kill が全部済んだら解決する（#38）。
+   *
+   * **アプリを閉じる前に待つこと。** 待たずに終わると、まだ kill していない
+   * シェルが残る。kill の最中に終わると閉じきらずに固まることもあった
+   */
+  drained(): Promise<void> {
+    if (!this.killing) return Promise.resolve();
+    return new Promise((resolve) => this.drainWaiters.push(resolve));
+  }
+
+  /**
+   * kill を順番待ちに入れる。**続けざまに kill しない**（#38）。
+   *
+   * node-pty は ConPTY を 1 本 kill している最中に次を kill するとネイティブで
+   * 落ちる（素の node で再現）。全終了もアプリの終了も全ペインを続けて閉じる
+   * ので、押した瞬間に PaneDeck ごと落ちる・閉じるときに固まる、が起きていた
+   */
+  private enqueueKill(pty: Pty): void {
+    this.killQueue.push(pty);
+    if (!this.killing) this.killNext();
+  }
+
+  private killNext(): void {
+    const pty = this.killQueue.shift();
+    if (!pty) {
+      this.killing = false;
+      for (const resolve of this.drainWaiters.splice(0)) resolve();
+      return;
+    }
+
+    this.killing = true;
+    let moved = false;
+    const next = () => {
+      if (moved) return;
+      moved = true;
+      this.killNext();
+    };
+    // 届いたら少し置いて次へ。届かなくても上限で次へ（待ち続けると殺しそびれる）
+    pty.onExit(() => this.schedule(next, KILL_AFTER_EXIT_MS));
+    this.schedule(next, KILL_SETTLE_MS);
+    try {
+      pty.kill();
+    } catch {
+      next();
+    }
+  }
+
   closeAll(): number {
     const ids = [...this.sessions.keys()];
     return ids.reduce((count, id) => count + (this.close(id) ? 1 : 0), 0);

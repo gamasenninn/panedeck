@@ -59,7 +59,11 @@ async function relaunch() {
     const app = electronApp;
     mark("relaunch: 閉じる前にセッションを畳む");
     await test.step("relaunch: 閉じる前にセッションを畳む", () =>
-      app.evaluate(() => global.__sessionManager.closeAll())
+      // kill は 1 本ずつ流れる（#38）。済むまで待ってから閉じる
+      app.evaluate(async () => {
+        global.__sessionManager.closeAll();
+        await global.__sessionManager.drained();
+      })
     );
     mark("relaunch: 前のアプリを閉じる");
     await test.step("relaunch: 前のアプリを閉じる", () => closeApp(app));

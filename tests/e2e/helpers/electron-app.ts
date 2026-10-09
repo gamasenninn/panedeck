@@ -95,8 +95,13 @@ export async function useFakePty(electronApp: ElectronApplication) {
         killed: false,
         write: (data: string) => fake.written.push(data),
         resize: () => {},
+        // 本物と同じく、kill されたら少し後に終了を知らせる。知らせないと
+        // kill の順番待ち（#38）が毎回上限の 1 秒まで待ち、閉じるたびに
+        // 「ペインの数 × 1 秒」かかっていた（全体試験が 3.9 分 → 5.3 分）
         kill: () => {
+          if (fake.killed) return;
           fake.killed = true;
+          setTimeout(() => exitHandlers.forEach((cb) => cb({ exitCode: -1073741510 })), 10);
         },
         onData: (cb: (data: string) => void) => dataHandlers.push(cb),
         onExit: (cb: (event: { exitCode: number }) => void) => exitHandlers.push(cb),
