@@ -182,6 +182,7 @@ panedeck/
 │   ├── trigger-template.ts  # 打つ文面の組み立て・id の検査（信頼境界）
 │   ├── mailbox.ts           # ペインごとの郵便受けをどう作るか（#34）
 │   ├── delivery-lookup.ts   # id から「届いたか」を判断する（#37）
+│   ├── build-watch.ts       # 動いているのが古いビルドか（中身で比べる）
 │   ├── service-runner.ts    # 裏のコマンドの起こし直し（時刻も起動も注入）
 │   ├── spawn-service.ts     # 実プロセスの起動（ここだけ child_process を知る）
 │   └── workspace.ts         # セッション構成の保存・復元

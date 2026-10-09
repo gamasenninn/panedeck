@@ -334,6 +334,8 @@ export interface DeckApi {
   listAgents(): Promise<AgentProfileSummary[]>;
   /** トリガーの様子。保留件数と、届けられない理由（#28） */
   listTriggers(): Promise<TriggerState[]>;
+  /** 動いているのが古いビルドか。中身で比べる（2026-10-10） */
+  isStale(): Promise<boolean>;
   /** 全終了の直前の構成が何個ぶん残っているか（2026-10-09） */
   countPrevious(): Promise<number>;
   /** 全終了の直前の構成に戻す。人が押したときだけ */

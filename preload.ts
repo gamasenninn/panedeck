@@ -23,6 +23,7 @@ const deck: DeckApi = {
   // エージェントプロファイル
   listAgents: () => ipcRenderer.invoke("agent:list"),
   listTriggers: () => ipcRenderer.invoke("trigger:list"),
+  isStale: () => ipcRenderer.invoke("app:stale"),
   countPrevious: () => ipcRenderer.invoke("workspace:previous"),
   restorePrevious: () => ipcRenderer.invoke("workspace:restorePrevious"),
   releaseTrigger: (watch: string) => ipcRenderer.invoke("trigger:release", watch),

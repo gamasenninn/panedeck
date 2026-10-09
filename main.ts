@@ -17,6 +17,7 @@ import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace"
 import { listProfiles, resolveProfile } from "./lib/agent-profiles";
 import { TriggerWatcher } from "./lib/trigger-watcher";
 import { desiredMailboxes } from "./lib/mailbox";
+import { BuildWatch } from "./lib/build-watch";
 import { createScreen } from "./lib/screen";
 import { resumePlan, shouldRetryFresh } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
@@ -565,6 +566,10 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // 起動したときのビルドの中身を、ここで覚える（後から読むと、書き換え後を覚えてしまう）
+  buildWatch = new BuildWatch(
+    process.env.PANEDECK_BUILD_DIR || path.join(app.getAppPath(), "dist")
+  );
   // ウィンドウより先に復元する。レンダラは一覧をポーリングして追従し、
   // それまでの出力は各セッションのログに溜まって初回描画時に流し込まれる
   restoreLastSession();
@@ -687,6 +692,19 @@ ipcMain.handle("agent:list", () => listProfiles());
 
 /** トリガーの様子（保留件数・届かない理由）。画面に出すためだけのもの（#28） */
 ipcMain.handle("trigger:list", () => triggerWatcher?.state() ?? []);
+
+/**
+ * 動いているのが古いビルドか（2026-10-10）。修正のたびに再起動して、新しいビルドで
+ * 動いているかを道具で確かめていた。**中身で比べる**（試験のビルドで日時だけ変わっても
+ * 出ない）。見る場所は E2E のために差し替えられる
+ */
+let buildWatch: BuildWatch | null = null;
+ipcMain.handle("app:stale", () => {
+  buildWatch ??= new BuildWatch(
+    process.env.PANEDECK_BUILD_DIR || path.join(app.getAppPath(), "dist")
+  );
+  return buildWatch.stale();
+});
 
 /**
  * 上限で止めたトリガーを解除する（#34 の合意 ③）。**人が押したときだけ**。

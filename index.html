@@ -487,6 +487,13 @@
         color: #79c0ff;
       }
 
+      /* 注意（危険ではない）。古いビルドで動いている、など */
+      .warn-text {
+        color: #d29922;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
       .danger-text {
         color: #ff7b72;
         font-size: 12px;
@@ -638,6 +645,15 @@
       >
 
       <span id="trigger-error" data-testid="trigger-error" class="danger-text" hidden></span>
+      <!-- 動いているのが古いビルド。修正を入れても再起動するまで効かない（2026-10-10） -->
+      <span
+        id="build-stale"
+        data-testid="build-stale"
+        class="warn-text"
+        title="ビルドが新しくなっています。PaneDeck を閉じて開き直すと、新しいビルドで動きます"
+        hidden
+        >新しいビルドあり（再起動で反映）</span
+      >
       <!-- 上限で止めたトリガーの解除（#34 の合意 ③）。自動では戻さない -->
       <button
         id="trigger-release"

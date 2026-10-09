@@ -1098,6 +1098,13 @@ window.addEventListener("resize", () => panes.forEach(fit));
 
 // メインプロセス側で増減したセッションにも追従する
 setInterval(sync, 300);
+
+// 動いているのが古いビルドか。300ms の突き合わせに混ぜない（ファイルを見るので）
+const buildStaleEl = document.getElementById("build-stale")!;
+setInterval(async () => {
+  if (!buildStaleEl.hidden) return; // 一度出たら出たまま（再起動するまで古い）
+  buildStaleEl.hidden = !(await api.isStale());
+}, 5000);
 setupAgentSelect();
 loadSettings();
 sync();
