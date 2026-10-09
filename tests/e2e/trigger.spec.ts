@@ -265,6 +265,8 @@ test("届いたことが、待った時間つきで残る", async () => {
   expect(delivered.title).toBe("受付");
   expect(typeof delivered.waitedMs).toBe("number");
   expect(delivered.submits).toBeGreaterThanOrEqual(1);
+  // **どの便を届けたか**（#37 の一歩）。送り手が自分の id で探せる
+  expect(delivered.ids).toEqual(["m1"]);
 });
 
 /**

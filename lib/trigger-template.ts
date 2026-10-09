@@ -122,3 +122,22 @@ export function idProblem(line: string, template: string): string | null {
   }
   return null;
 }
+
+/**
+ * 行の id を、**識別子の形をしているときだけ**返す。そうでなければ null。
+ *
+ * 記録に「どの便を届けたか」を残すため（#37 の一歩）。文章の入った id を写すと、
+ * 記録が次の運び屋になる。判定は `idProblem` と同じ `SAFE_ID`
+ */
+export function safeIdOf(line: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const id = (parsed as Record<string, unknown>).id;
+  if (typeof id !== "string" && typeof id !== "number") return null;
+  return SAFE_ID.test(String(id)) ? String(id) : null;
+}

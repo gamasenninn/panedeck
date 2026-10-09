@@ -31,7 +31,7 @@
 import fs from "fs";
 
 import type { TriggerConfig, TriggerState } from "../types/panedeck";
-import { idProblem, renderTemplate, templateValues } from "./trigger-template";
+import { idProblem, renderTemplate, safeIdOf, templateValues } from "./trigger-template";
 
 // 形は types/panedeck.d.ts に 1 つだけ置く。ここで二重に持つと、片方だけ
 // 直したときにずれる（#34 の上限を足したときに実際にずれた）
@@ -76,6 +76,14 @@ export const CONFIRM_MS = 4_000;
 
 /** CR を押す回数の上限。これを越えたら諦めて、保留に戻して人に知らせる */
 export const MAX_SUBMITS = 3;
+
+/**
+ * 届けた便の id（#37 の一歩）。送り手が記録を自分の id で探せるように。
+ * 識別子の形をしていないものは写さない（記録が運び屋にならないように）
+ */
+function idsOf(lines: string[]): string[] {
+  return lines.map(safeIdOf).filter((id): id is string => id !== null);
+}
 
 export interface PaneRef {
   id: string;
@@ -584,6 +592,7 @@ export class TriggerWatcher {
       watch: entry.config.watch,
       title: entry.config.pane.title,
       count: lines.length,
+      ids: idsOf(lines),
     });
   }
 
@@ -626,6 +635,7 @@ export class TriggerWatcher {
         watch: entry.config.watch,
         title: entry.config.pane.title,
         count: pending.lines.length,
+        ids: idsOf(pending.lines),
         // **保留の有無と長さが、この 1 行で分かる**
         waitedMs: this.now() - pending.heldSince,
         // 押し直しで助かったなら、それもここに出る（#32）
@@ -655,6 +665,7 @@ export class TriggerWatcher {
       watch: entry.config.watch,
       title: entry.config.pane.title,
       count: pending.lines.length,
+      ids: idsOf(pending.lines),
       submits: pending.submits,
     });
     entry.error = `実行されませんでした。入力欄を片付けてください: ${entry.config.pane.title}`;

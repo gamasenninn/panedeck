@@ -256,6 +256,16 @@ This mattered once anyone could write the file. An id issued by a server, like T
 
 **Only `{id}` is checked.** Any other field you put in `send` is still yours to vouch for.
 
+#### Did my message arrive?
+
+Every delivery is written to the event log (`events-YYYYMMDD.jsonl`, next to the pane logs) with the ids of the lines it carried:
+
+```json
+{"kind":"delivery","title":"受付","count":1,"ids":["mb-honntai-5"],"waitedMs":923,"submits":1}
+```
+
+A sender can search for its own id to see whether the message was typed, delivered, or `not-executed`, and how long it waited. Only ids that look like identifiers are written — the log must not become a carrier for whatever someone put in an `id`.
+
 #### A limit, for files anyone can write
 
 A trigger can carry a delivery limit:
