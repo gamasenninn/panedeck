@@ -1090,6 +1090,66 @@ test.describe("届けた便の id を記録に残す", () => {
   });
 });
 
+/**
+ * **見張りを外す**（郵便受けの自動作成のため、2026-10-10）。
+ *
+ * ペインを閉じたら、その郵便受けの見張りも外す。ただし**カーソルは覚えておく** ——
+ * 開き直したときに、閉じている間に書かれた便も届くように（「閉じている間の便も
+ * 届く」を郵便受けでも守る）。
+ */
+test.describe("見張りを外す", () => {
+  test("外したら、その後に足された行は配らない", () => {
+    const file = tempFile("");
+    const { watcher, sent } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+
+    expect(watcher.remove(file)).toBe(true);
+    fs.appendFileSync(file, '{"id":"m1"}\n');
+    watcher.check();
+
+    expect(sent).toEqual([]);
+    expect(watcher.state()).toEqual([]);
+  });
+
+  test("知らないファイルを外そうとしたら false", () => {
+    const { watcher } = setup();
+    expect(watcher.remove("no-such")).toBe(false);
+  });
+
+  /** 設定に残すため。消えると、次の起動で外していた間の便を飛ばす */
+  test("外したトリガーのカーソルも cursors() に残る", () => {
+    const file = tempFile('{"id":"old"}\n');
+    const { watcher } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+    const before = watcher.cursors()[file];
+
+    watcher.remove(file);
+
+    expect(watcher.cursors()[file]).toBe(before);
+  });
+
+  test("足し直すと、外していた間に書かれた行も届く", () => {
+    const file = tempFile("");
+    const { watcher, sent } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+    watcher.remove(file);
+
+    fs.appendFileSync(file, '{"id":"while-away"}\n');
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+    watcher.check();
+
+    expect(sent.map((x) => x.text)).toEqual(["while-away"]);
+  });
+
+  test("同じファイルを二重に足さない", () => {
+    const file = tempFile("");
+    const { watcher } = setup();
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" });
+    expect(watcher.state()).toHaveLength(1);
+  });
+});
+
 test.describe("変わっていなければ読まない", () => {
   function countingSetup(file: string, options: Record<string, unknown> = {}) {
     let reads = 0;

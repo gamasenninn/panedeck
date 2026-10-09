@@ -74,6 +74,7 @@ test.describe("normalizeSettings", () => {
       "logMaxTotalMB",
       "logRetentionDays",
       "logStripAnsi",
+      "mailboxes",
       "services",
       "triggerCursors",
       "triggers",
@@ -535,5 +536,23 @@ test.describe("トリガーの重複", () => {
     }).triggers;
 
     expect(triggers).toHaveLength(2);
+  });
+});
+
+/**
+ * 郵便受けをペインごとに自動で作るか（#34、2026-10-10）。**既定は無効** ——
+ * 使わない人の動きを変えない。真偽値だけを受け付ける
+ */
+test.describe("mailboxes", () => {
+  test("既定は無効", () => {
+    expect(normalizeSettings({}).mailboxes).toBe(false);
+  });
+
+  test("true で有効", () => {
+    expect(normalizeSettings({ mailboxes: true }).mailboxes).toBe(true);
+  });
+
+  test("真偽値でなければ既定へ", () => {
+    expect(normalizeSettings({ mailboxes: "yes" }).mailboxes).toBe(false);
   });
 });

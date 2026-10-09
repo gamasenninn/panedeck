@@ -276,6 +276,11 @@ export interface Settings {
   triggers: TriggerConfig[];
   /** 監視ファイルごとに、どこまで届けたか。再起動で飛ばさないため */
   triggerCursors: Record<string, number>;
+  /**
+   * 郵便受けをペインごとに自動で作る（#34）。`<userData>/mailbox/<題>.jsonl` を
+   * 見張り、上限 10 分に 6 回を必ず付ける。決まりは docs/mailbox.md
+   */
+  mailboxes: boolean;
   /** 裏で走らせ続けるコマンド（#29） */
   services: ServiceConfig[];
 }

@@ -16,6 +16,7 @@ import { SessionManager } from "./lib/session-manager";
 import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace";
 import { listProfiles, resolveProfile } from "./lib/agent-profiles";
 import { TriggerWatcher } from "./lib/trigger-watcher";
+import { desiredMailboxes } from "./lib/mailbox";
 import { createScreen } from "./lib/screen";
 import { resumePlan, shouldRetryFresh } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
@@ -399,9 +400,53 @@ sessionManager.onExit((id, exitCode) => {
  * 複数のペインで重なりうる）。どこまで届けたかは設定に預けてあるので、
  * 閉じている間に増えた行も次の起動で届く。
  */
+/** 郵便受けの置き場所（#34）。設定・ログ・復元の控えと同じ場所に並ぶ */
+function mailboxDir(): string {
+  return path.join(path.dirname(settingsPath()), "mailbox");
+}
+
+/**
+ * いま開いているペインの題と、郵便受けのトリガーを突き合わせる（#34、2026-10-10）。
+ *
+ * 足りないものは**ファイルを空で作ってから**足し（無いと「読めません」が出る）、
+ * 要らなくなったもの（閉じた・題を変えた）は外す。外しても TriggerWatcher が
+ * カーソルを覚えているので、開き直せば閉じている間の便も届く
+ */
+function syncMailboxes(
+  watcher: TriggerWatcher,
+  auto: Set<string>,
+  manual: string[],
+  persisted: Record<string, number>
+): void {
+  const desired = desiredMailboxes({
+    titles: sessionManager.list().map((session) => session.title ?? ""),
+    dir: mailboxDir(),
+    taken: manual,
+  });
+  const want = new Map(desired.map((config) => [config.watch, config]));
+
+  for (const watch of [...auto]) {
+    if (want.has(watch)) continue;
+    watcher.remove(watch);
+    auto.delete(watch);
+  }
+  for (const [watch, config] of want) {
+    if (auto.has(watch)) continue;
+    try {
+      fs.mkdirSync(path.dirname(watch), { recursive: true });
+      // 追記で開くので、既にあれば中身はそのまま（作るだけ）
+      fs.appendFileSync(watch, "", "utf8");
+    } catch {
+      continue; // 作れなければ見張らない。次の周でまた試す
+    }
+    watcher.add(config, persisted[watch]);
+    auto.add(watch);
+  }
+}
+
 function startTriggers(): void {
   const settings = readSettings(settingsPath());
-  if (settings.triggers.length === 0) return;
+  if (settings.triggers.length === 0 && !settings.mailboxes) return;
 
   triggerWatcher = new TriggerWatcher({
     findPane: (title) =>
@@ -428,9 +473,15 @@ function startTriggers(): void {
     triggerWatcher.add(trigger, settings.triggerCursors[trigger.watch]);
   }
 
+  const manual = settings.triggers.map((trigger) => trigger.watch);
+  const autoMailboxes = new Set<string>();
+
   let saved = JSON.stringify(triggerWatcher.cursors());
   triggerTimer = setInterval(() => {
     if (!triggerWatcher) return;
+    if (settings.mailboxes) {
+      syncMailboxes(triggerWatcher, autoMailboxes, manual, settings.triggerCursors);
+    }
     triggerWatcher.check();
 
     // 進んだときだけ書く。毎周書くと設定ファイルを叩き続けることになる

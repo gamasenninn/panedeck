@@ -206,6 +206,11 @@ interface Entry {
 
 export class TriggerWatcher {
   private entries: Entry[] = [];
+  /**
+   * 外したトリガーのカーソル。**足し直したらここから再開する**（郵便受けの
+   * 自動作成のため）。ペインを閉じている間に書かれた便も、開き直せば届く
+   */
+  private retired = new Map<string, number>();
   private findPane: (title: string) => PaneRef[];
   private typeInto: (id: string, text: string) => void;
   private submitTo: (id: string) => void;
@@ -258,6 +263,11 @@ export class TriggerWatcher {
    * 送りつけないため。預けたカーソルがあるときだけ、そこから再開する。
    */
   add(config: TriggerConfig, cursor?: number): void {
+    // 同じファイルを二重に見張らない（配達が 2 回になる）
+    if (this.entries.some((entry) => entry.config.watch === config.watch)) return;
+    // 外していたものなら、外した位置から再開する
+    cursor ??= this.retired.get(config.watch);
+    this.retired.delete(config.watch);
     const size = this.sizeOf(config.watch);
     this.entries.push({
       config,
@@ -378,9 +388,22 @@ export class TriggerWatcher {
     return true;
   }
 
+  /**
+   * 見張りを外す。**カーソルは覚えておく**（足し直したらそこから再開し、
+   * 設定にも残す）。郵便受けのペインを閉じたときに使う
+   */
+  remove(watch: string): boolean {
+    const index = this.entries.findIndex((entry) => entry.config.watch === watch);
+    if (index === -1) return false;
+    this.retired.set(watch, this.entries[index].cursor);
+    this.entries.splice(index, 1);
+    return true;
+  }
+
   /** 保存しておくカーソル。次の起動でここから再開する */
   cursors(): Record<string, number> {
-    const out: Record<string, number> = {};
+    // 外したものも残す。消えると、次の起動で外していた間の便を飛ばす
+    const out: Record<string, number> = Object.fromEntries(this.retired);
     for (const entry of this.entries) out[entry.config.watch] = entry.cursor;
     return out;
   }

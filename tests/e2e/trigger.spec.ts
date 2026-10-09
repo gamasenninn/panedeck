@@ -34,7 +34,7 @@ const ASKING_SCREEN = "Do you want to create note.txt?\n❯ 1 Yes\n  3. No";
 let electronApp: ElectronApplication;
 let page: Page;
 
-async function launchWith(triggers: unknown[]) {
+async function launchWith(triggers: unknown[], extra: Record<string, unknown> = {}) {
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
   fs.mkdirSync(TEMP_DIR, { recursive: true });
   fs.writeFileSync(QUEUE, "", "utf8");
@@ -46,6 +46,7 @@ async function launchWith(triggers: unknown[]) {
       // 出来事の記録もここへ（#36）。**実 userData を触らせない**
       logDir: path.join(TEMP_DIR, "logs"),
       triggers,
+      ...extra,
     }),
     "utf8"
   );
@@ -381,4 +382,50 @@ test("届け先のペインが終了していたら、理由が見える", async
     timeout: 10_000,
   });
   expect(await writtenTo(electronApp, 0)).toEqual([]);
+});
+
+/**
+ * **郵便受けをペインごとに自動で作る**（#34、2026-10-10）。
+ *
+ * 手で設定に書いていたときは、ペインを足すたびに設定を書き換えて再起動が要り、
+ * 上限の付け忘れにも気づけなかった。
+ */
+test.describe("郵便受けの自動作成", () => {
+  const MAILBOX = path.join(TEMP_DIR, "mailbox");
+
+  test("有効にすると、ペインの題で郵便受けができ、書けば届く", async () => {
+    await launchWith([], { mailboxes: true });
+    await givenPane("受付", READY_SCREEN);
+
+    const box = path.join(MAILBOX, "受付.jsonl");
+    await expect.poll(() => fs.existsSync(box), { timeout: 10_000 }).toBe(true);
+
+    fs.appendFileSync(box, '{"id":"mb-1","from":"本体"}\n', "utf8");
+    await expect
+      .poll(async () => (await writtenTo(electronApp, 0)).join(""), { timeout: 10_000 })
+      .toContain("郵便受けに新着 1 件（最新 id=mb-1）");
+    // 見張りが 1 つ立っている（上限が必ず付くことは単体 mailbox.spec で見ている）
+    const triggers = await page.evaluate(() => window.deck.listTriggers());
+    expect(triggers.map((t) => t.title)).toEqual(["受付"]);
+  });
+
+  /** 宛先が決まらない。作るとツールバーに「同じ題が 2 つ」が出続ける */
+  test("同じ題のペインが 2 つなら作らず、警告も出ない", async () => {
+    await launchWith([], { mailboxes: true });
+    await createSession(page, { cwd: "/work/a", title: "同じ" });
+    await createSession(page, { cwd: "/work/b", title: "同じ" });
+    await waitForPaneCount(page, 2);
+    await page.waitForTimeout(1000);
+
+    expect(fs.existsSync(path.join(MAILBOX, "同じ.jsonl"))).toBe(false);
+    await expect(page.locator("[data-testid=trigger-error]")).toBeHidden();
+  });
+
+  test("既定（無効）では作られない", async () => {
+    await launchWith([]);
+    await givenPane("受付", READY_SCREEN);
+    await page.waitForTimeout(1000);
+
+    expect(fs.existsSync(path.join(MAILBOX, "受付.jsonl"))).toBe(false);
+  });
 });

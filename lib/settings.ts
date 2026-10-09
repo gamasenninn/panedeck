@@ -48,6 +48,8 @@ export const DEFAULT_SETTINGS: Settings = {
   triggers: [],
   // どこまで届けたか。閉じている間に増えた行を次の起動で飛ばさないため
   triggerCursors: {},
+  // 郵便受けをペインごとに自動で作る（#34）。既定は無効
+  mailboxes: false,
 
   // 裏で走らせ続けるコマンド（#29）。既定は無し
   services: [],
@@ -177,6 +179,7 @@ export function normalizeSettings(raw: unknown): Settings {
     autoRestore: bool(source.autoRestore, DEFAULT_SETTINGS.autoRestore),
     autoLog: bool(source.autoLog, DEFAULT_SETTINGS.autoLog),
     logStripAnsi: bool(source.logStripAnsi, DEFAULT_SETTINGS.logStripAnsi),
+    mailboxes: bool(source.mailboxes, DEFAULT_SETTINGS.mailboxes),
     logDir:
       typeof source.logDir === "string"
         ? source.logDir.trim()
