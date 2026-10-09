@@ -1141,6 +1141,29 @@ test.describe("見張りを外す", () => {
     expect(sent.map((x) => x.text)).toEqual(["while-away"]);
   });
 
+  /**
+   * ★ **起動時のカーソルを渡されても、外した位置を優先する**（2026-10-10）。
+   *
+   * main は足し直すたびに、起動時に設定から読んだカーソルを渡す。それを優先
+   * すると、起動後に配った分まで巻き戻り、**ペインを開き直しただけで配り済みの
+   * 便がもう一度打ち込まれる**。外した位置は必ず起動時より新しい
+   */
+  test("足し直すとき、起動時のカーソルより外した位置を使う", () => {
+    const file = tempFile("");
+    const { watcher, sent, runHandshake } = setup();
+    const atStart = 0;
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" }, atStart);
+
+    fs.appendFileSync(file, '{"id":"m1"}\n');
+    runHandshake(); // m1 は配り済み
+    watcher.remove(file);
+
+    watcher.add({ watch: file, pane: { title: "a" }, send: "{id}" }, atStart);
+    watcher.check();
+
+    expect(sent.map((x) => x.text)).toEqual(["m1"]); // 2 回目は無い
+  });
+
   test("同じファイルを二重に足さない", () => {
     const file = tempFile("");
     const { watcher } = setup();

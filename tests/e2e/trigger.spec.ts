@@ -421,6 +421,51 @@ test.describe("郵便受けの自動作成", () => {
     await expect(page.locator("[data-testid=trigger-error]")).toBeHidden();
   });
 
+  /**
+   * ★ **開き直しても、配り済みの便をもう一度打たない**（2026-10-10）。
+   *
+   * main は足し直すたびに、起動時に設定から読んだカーソルを渡していた。それが
+   * 外した位置より優先され、開き直しただけで配り済みの便がもう一度届いていた。
+   * 起動時の設定にカーソルを入れておかないと、この道を通らない
+   */
+  test("ペインを閉じて開き直しても、配り済みの便はもう一度打たない", async () => {
+    const box = path.join(MAILBOX, "受付.jsonl");
+    await launchWith([], { mailboxes: true, triggerCursors: { [box]: 0 } });
+    await givenPane("受付", READY_SCREEN);
+    await expect.poll(() => fs.existsSync(box), { timeout: 10_000 }).toBe(true);
+
+    fs.appendFileSync(box, '{"id":"mb-1"}\n', "utf8");
+    await expect
+      .poll(() => writtenTo(electronApp, 0), { timeout: 10_000 })
+      .toContain("\r");
+    await emitPtyData(electronApp, 0, "\x1b[2J\x1b[H● 作業しています…\r\n");
+    await advanceClock(electronApp, 1000);
+    await expect
+      .poll(async () => (await page.evaluate(() => window.deck.listTriggers()))[0]?.held, {
+        timeout: 10_000,
+      })
+      .toBe(0);
+
+    // 閉じて、同じ題で開き直す
+    await page.locator("[data-testid=pane-close]").first().click();
+    await waitForPaneCount(page, 0);
+    // ★ **見張りが外れたのを確かめてから**開き直す。速すぎると見回りが「閉じた」を
+    // 見ないまま開き直し、足し直しの道を通らない（修正前でも通ってしまった）
+    await expect
+      .poll(async () => (await page.evaluate(() => window.deck.listTriggers())).length, {
+        timeout: 10_000,
+      })
+      .toBe(0);
+    await createSession(page, { cwd: "/work/queue-a", title: "受付" });
+    await waitForPaneCount(page, 1);
+    await advanceClock(electronApp, 1000);
+    await emitPtyData(electronApp, 1, READY_SCREEN);
+    await advanceClock(electronApp, 1000);
+    await page.waitForTimeout(1500);
+
+    expect((await writtenTo(electronApp, 1)).join("")).not.toContain("mb-1");
+  });
+
   test("既定（無効）では作られない", async () => {
     await launchWith([]);
     await givenPane("受付", READY_SCREEN);

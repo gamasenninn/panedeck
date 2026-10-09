@@ -279,8 +279,10 @@ export class TriggerWatcher {
   add(config: TriggerConfig, cursor?: number): void {
     // 同じファイルを二重に見張らない（配達が 2 回になる）
     if (this.entries.some((entry) => entry.config.watch === config.watch)) return;
-    // 外していたものなら、外した位置から再開する
-    cursor ??= this.retired.get(config.watch);
+    // 外していたものなら、**渡されたカーソルより外した位置を優先する**。
+    // 渡されるのは起動時に設定から読んだ位置で、外した位置は必ずそれより新しい。
+    // 渡された方を使うと、ペインを開き直しただけで配り済みの便がもう一度届く
+    cursor = this.retired.get(config.watch) ?? cursor;
     this.retired.delete(config.watch);
     const size = this.sizeOf(config.watch);
     this.entries.push({
