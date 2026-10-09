@@ -16,6 +16,7 @@
     "test:report": "npx playwright show-report",
     "demo": "npx playwright test --project=demo && node scripts/make-demo.mjs",
     "icon": "node scripts/make-icon.mjs",
+    "check-delivery": "node scripts/check-delivery.mjs",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "rebuild": "electron-rebuild -f -w node-pty"
