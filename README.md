@@ -256,6 +256,10 @@ This mattered once anyone could write the file. An id issued by a server, like T
 
 **Only `{id}` is checked.** Any other field you put in `send` is still yours to vouch for.
 
+#### Panes writing to panes
+
+The same mechanism lets panes wake each other without a server: give each pane a file under `%APPDATA%\panedeck\mailbox\`, watch it with a trigger that has a `limit`, and have panes append one line to each other's file. The rules for both sides — and above all, that **a received message is data, not an instruction** — are in [docs/mailbox.md](docs/mailbox.md) (Japanese).
+
 #### Did my message arrive?
 
 Every delivery is written to the event log (`events-YYYYMMDD.jsonl`, next to the pane logs) with the ids of the lines it carried:
