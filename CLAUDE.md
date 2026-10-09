@@ -14,10 +14,17 @@ node-pty + xterm.js。
 - 複数ターミナルのグリッド表示（列数指定・ドラッグでの並べ替え・1 ペイン拡大）
 - 全ペイン / 選択ペイン / **入力待ちのペインだけ**への一斉入力（Broadcast）
 - 各ペインへの個別 sendkey（Enter / Esc / Ctrl+C / 矢印など）
-- 各セッションの状態可視化（running / waiting / idle / exited）
+- 各セッションの状態可視化（running / ready / asking / waiting / idle / exited）。
+  判定はペインの**画面**（@xterm/headless）を見る（#31）
 - エージェントプロファイル（起動コマンドと待機パターンを組で切り替え）
 - 出力ログのファイル保存・自動保存・古いログの片付け
-- セッション構成（ワークスペース）の保存・復元・起動時の自動復元
+- セッション構成（ワークスペース）の保存・復元・起動時の自動復元。各ペインは
+  **自分の会話に戻る**（#33）。全終了は確認を出し、直前の構成に戻せる
+- **トリガー**（#28）: ファイルが伸びたら、指示待ちのペインへ「新着 N 件」を打つ。
+  打ってから実行を確かめる（#32）、配達の上限（#34）、届け先が動いていないと理由を出す
+- **郵便受け**（#34）: ペインごとのファイルで、ペインどうしが起こし合う。決まりは
+  `docs/mailbox.md`、届いたかは `scripts/check-delivery.mjs <id>`
+- 裏で走らせ続けるコマンド（#29）・出来事の記録 `events-YYYYMMDD.jsonl`（#36）
 
 ## 引き継ぎ
 
@@ -156,15 +163,25 @@ panedeck/
 │   ├── constants.ts         # 状態ラベル・特殊キーの並び
 │   ├── clipboard.ts         # コピーするキー操作かの判定（純粋関数）
 │   ├── keys.ts              # 改行を送るキー操作かの判定（純粋関数）
-│   └── broadcast.ts         # 一斉入力の送信先と表示の判定（純粋関数）
+│   ├── broadcast.ts         # 一斉入力の送信先と表示の判定（純粋関数）
+│   ├── service-label.ts     # 裏のコマンドの様子の表示（純粋関数）
+│   └── close-all.ts         # 全終了の確認の文面（純粋関数）
 ├── lib/                 # Electron 非依存のロジック
-│   ├── session-manager.ts   # pty セッションのレジストリ（コアロジック）
+│   ├── session-manager.ts   # pty セッションのレジストリ（コアロジック）。kill は 1 本ずつ（#38）
+│   ├── screen.ts            # ペインの画面（@xterm/headless）。状態はこれを見て判定する（#31）
 │   ├── status-detector.ts   # 出力から状態を判定する純粋関数
 │   ├── agent-profiles.ts    # エージェント定義（表示名/起動コマンド/待機パターン）
 │   ├── command.ts           # 起動コマンドの正規化
+│   ├── session-command.ts   # 会話を指定する起動コマンドの組み立て（#33）
+│   ├── resume-plan.ts       # 復元のとき、会話を再開するか新しく始めるか（#33）
 │   ├── settings.ts          # アプリ設定の読み書き（保存先パスは注入）
 │   ├── log-writer.ts        # 出力のバッファリングとファイル追記
 │   ├── log-retention.ts     # 古いログの片付け（索引で自作分だけを対象に）
+│   ├── event-log.ts         # 出来事の記録 events-YYYYMMDD.jsonl（#36）
+│   ├── trigger-watcher.ts   # トリガー: ファイルを見張り、指示待ちのペインへ打つ（#28）
+│   ├── trigger-template.ts  # 打つ文面の組み立て・id の検査（信頼境界）
+│   ├── mailbox.ts           # ペインごとの郵便受けをどう作るか（#34）
+│   ├── delivery-lookup.ts   # id から「届いたか」を判断する（#37）
 │   ├── service-runner.ts    # 裏のコマンドの起こし直し（時刻も起動も注入）
 │   ├── spawn-service.ts     # 実プロセスの起動（ここだけ child_process を知る）
 │   └── workspace.ts         # セッション構成の保存・復元
@@ -172,9 +189,15 @@ panedeck/
 │   ├── panedeck.d.ts        # 層をまたぐ受け渡しの形（Session / DeckApi など）
 │   └── globals.d.ts         # window.deck・xterm グローバル・E2E の足場
 ├── build/               # アイコン（svg が正、png は生成物）
+├── docs/
+│   ├── HANDOVER.md          # 引き継ぎ（作業の前に必ず読む）
+│   ├── mailbox.md           # 郵便受けの決まり（送り手・受け手）
+│   └── remote-wakeup.md     # 別マシンからペインを起こす仕組み
 ├── scripts/
 │   ├── make-icon.mjs        # svg → png
-│   └── inspect-log.mjs      # 保存ログを「判定が見る形」で表示する調査用
+│   ├── make-demo.mjs        # 収録した動画を README 用の GIF にする
+│   ├── inspect-log.mjs      # 保存ログを「判定が見る形」で表示する調査用
+│   └── check-delivery.mjs   # id を渡すと、その便が届いたかを答える（#37）
 └── tests/
     ├── unit/            # lib/ と renderer/ の単体テスト（Electron 不要）
     ├── e2e/             # Playwright + Electron の E2E テスト
