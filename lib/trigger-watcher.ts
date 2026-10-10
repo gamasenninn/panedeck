@@ -559,7 +559,8 @@ export class TriggerWatcher {
    * 落ちてシェルに戻ったペイン（待機）は待っても届かない。以前はペインの
    * 「保留 N」が出るだけで、**夜中に落ちたら朝まで誰も気づかなかった**。
    *
-   * 作業中・確認待ちでは出さない。作業中は待てば届き、確認待ちは画面に出ている
+   * 作業中では出さない（待てば届く）。確認待ち・waiting は以前は「画面に出ている」と
+   * して出さなかったが、画面を見られない人には黙るのと同じなので、今は出す
    */
   private unresponsive(entry: Entry, pane: PaneRef): boolean {
     const title = entry.config.pane.title;
@@ -568,11 +569,21 @@ export class TriggerWatcher {
       entry.error = `送り先のペインは終了しています。開き直すまで届きません: ${title}`;
       return true;
     }
-    if (pane.status === "idle") {
+    // ★ 待機・waiting・確認待ちのまま猶予を過ぎたら、**状態の名前つきで**理由を出す。
+    // 以前は確認待ちを「画面に出ているから」と除外していたが、画面を見られない人
+    // （別マシンのエージェント）には黙っているのと同じだった（Mac セッションが踏んだ:
+    // claude のペインが立ったのに、配達の記録が 1 行も出なかった）
+    const reasons: Record<string, string> = {
+      idle: `送り先でエージェントが動いていないようです（状態: idle）。届けられません: ${title}`,
+      waiting:
+        `送り先が指示待ちになりません（状態: waiting。入力を待っているが、指示待ちの印が見つからない）。` +
+        `届けられません: ${title}`,
+      asking: `送り先が確認待ちのまま止まっています（状態: asking）。届けられません: ${title}`,
+    };
+    const reason = reasons[pane.status];
+    if (reason) {
       entry.idleSince ??= this.now();
-      if (this.now() - entry.idleSince >= IDLE_WARN_MS) {
-        entry.error = `送り先でエージェントが動いていないようです（待機のまま）。届けられません: ${title}`;
-      }
+      if (this.now() - entry.idleSince >= IDLE_WARN_MS) entry.error = reason;
       return true;
     }
     entry.idleSince = null;

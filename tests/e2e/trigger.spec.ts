@@ -474,3 +474,29 @@ test.describe("郵便受けの自動作成", () => {
     expect(fs.existsSync(path.join(MAILBOX, "受付.jsonl"))).toBe(false);
   });
 });
+
+/**
+ * ★ **見張り始めた位置を、配る前から保存する**（2026-10-10、Mac セッションが踏んだ）。
+ *
+ * どこまで届けたか（triggerCursors）は、配達で位置が進んだときにだけ保存していた。
+ * 一度も配っていないトリガーは何も保存せず、再起動のたびに「今の末尾から」見張り直す
+ * ので、**その間に書かれた行が永久に配られない**。Mac では、配られないまま t-3 を
+ * 残して再起動したら、t-3 は読まれなかった
+ */
+test("一度も配っていなくても、見張り始めた位置が設定に残る", async () => {
+  await launchWith([{ watch: QUEUE, pane: { title: "受付" }, send: "{count}" }]);
+  await givenPane("受付", ASKING_SCREEN); // 指示待ちでない = 配らない
+
+  fs.appendFileSync(QUEUE, '{"id":"m1"}\n', "utf8");
+
+  await expect
+    .poll(
+      () => {
+        const saved = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8"));
+        return saved.triggerCursors?.[QUEUE];
+      },
+      { timeout: 10_000 }
+    )
+    .toBe(0);
+  expect(await writtenTo(electronApp, 0)).toEqual([]);
+});

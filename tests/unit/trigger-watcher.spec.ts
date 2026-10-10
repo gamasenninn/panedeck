@@ -979,9 +979,32 @@ test.describe("届け先が動いていない", () => {
     expect(watcher.state()[0].error).toBe("");
   });
 
-  test("確認待ちなら長くても出さない", () => {
+  /**
+   * ★ **確認待ち・waiting のまま黙らない**（2026-10-10、Mac セッションが踏んだ）。
+   *
+   * 以前は「確認待ちは画面に出ているから」と除外していた。でも**画面を見られない人**
+   * （別マシンのエージェント）には、黙っているのと同じ。Mac では claude のペインが
+   * 立ったのに配達の記録が 1 行も出ず、「見張りが動いていないのか、指示待ちと
+   * 判定されないのか」を外から分けられなかった。**状態の名前を理由に入れる**
+   */
+  test("確認待ちのまま猶予を過ぎたら、状態の名前つきで理由が出る", () => {
     const { watcher, advance } = heldSetup("asking");
-    advance(IDLE_WARN_MS * 10);
+    advance(IDLE_WARN_MS);
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("asking");
+  });
+
+  /** claude の画面に、指示待ちの印が見つからないとき（Mac で起きた形） */
+  test("waiting のまま猶予を過ぎたら、状態の名前つきで理由が出る", () => {
+    const { watcher, advance } = heldSetup("waiting");
+    advance(IDLE_WARN_MS);
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("waiting");
+  });
+
+  test("waiting でも猶予のうちは出さない", () => {
+    const { watcher, advance } = heldSetup("waiting");
+    advance(IDLE_WARN_MS - 1);
     watcher.check();
     expect(watcher.state()[0].error).toBe("");
   });

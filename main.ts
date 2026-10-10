@@ -503,7 +503,10 @@ function startTriggers(): void {
   const manual = settings.triggers.map((trigger) => trigger.watch);
   const autoMailboxes = new Set<string>();
 
-  let saved = JSON.stringify(triggerWatcher.cursors());
+  // ★ **設定に実際に書かれている位置**と比べる。見張り始めた位置と比べると、
+  // 一度も配らないトリガーは位置を保存しないまま終わり、再起動のたびに「今の末尾から」
+  // 見張り直して、その間に書かれた行を永久に配らない（Mac セッションが踏んだ）
+  let saved = JSON.stringify(settings.triggerCursors);
   triggerTimer = setInterval(() => {
     if (!triggerWatcher) return;
     tickSessions = sessionManager.list();
