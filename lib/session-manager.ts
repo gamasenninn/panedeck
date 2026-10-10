@@ -21,6 +21,9 @@ export const DEFAULT_MAX_LOG_BYTES = 500000;
 /** 題に混ぜてはいけない文字。改行が入ると表示も宛先の一致判定も壊れる */
 const CONTROL_CHARS = /[\x00-\x1f\x7f]+/g;
 
+/** 画面に文字を描く出力か。空白と制御文字（C0・DEL）以外が 1 字でもあれば描く */
+const DRAWS_TEXT = /[^\s\x00-\x1f\x7f]/;
+
 /** 状態判定に渡す末尾の文字数 */
 const TAIL_CHARS = 2000;
 
@@ -222,8 +225,9 @@ export class SessionManager {
       // 指示待ちのあいだも ESC[?6n（カーソル位置の問い合わせ）だけを 1 秒に何度も
       // 出し続け、「出力が来たら作業中」ではずっと作業中になり、トリガーが永久に
       // 配らなかった。問い合わせ・カーソルの切り替え・タイトルの更新・改行だけは
-      // 画面に文字を描かないので、作業の印にしない
-      if (/\S/.test(stripAnsi(data))) session.lastOutputAt = this.now();
+      // 画面に文字を描かないので、作業の印にしない。ESC 列の外の制御文字（BEL・NUL・BS・
+      // DEL）も描かない（\S は BEL にも一致し、Mac の偽 claude で作業中に見えた）
+      if (DRAWS_TEXT.test(stripAnsi(data))) session.lastOutputAt = this.now();
       this.dataHandlers.forEach((cb) => cb(id, data));
     });
 

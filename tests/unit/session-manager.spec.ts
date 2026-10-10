@@ -576,6 +576,20 @@ test.describe("文字を出さない出力", () => {
     now.advance(100);
     expect(manager.get(id)!.status).toBe(STATUS.READY);
   });
+
+  /**
+   * ★ 単独の BEL（ESC 列の外の制御文字）も描かない（2026-10-10、Mac セッションの指摘）。
+   * \S は BEL・NUL・BS にも一致するので、以前は作業として数えていた。Mac の偽 claude は
+   * 入力が溢れた tty の BEL を ?6n の 7 倍の速さで出し、ずっと作業中に見えた
+   */
+  test("BEL などの制御文字だけでも、作業中にならない", () => {
+    const { manager, ptyFactory, now, id } = claudeSetup();
+    for (let i = 0; i < 10; i += 1) {
+      ptyFactory.last()!.emitData("\x07\x00\x08\x7f");
+      now.advance(100);
+    }
+    expect(manager.get(id)!.status).toBe(STATUS.READY);
+  });
 });
 
 test.describe("並べ替え", () => {
