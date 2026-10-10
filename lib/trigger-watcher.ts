@@ -58,6 +58,16 @@ export const PARTIAL_WARN_MS = 10_000;
 export const IDLE_WARN_MS = 60_000;
 
 /**
+ * 届け先が**作業中のまま**のとき、理由を出すまでの猶予。待機より長く取る ——
+ * 作業中は待てば届くのが普通で、数分の作業で騒がないため。
+ *
+ * ★ それでも永久には黙らない（2026-10-10、Mac セッションが踏んだ）。画面が
+ * 0.4 秒より短い間隔で描き直し続けると、出力が止まらず**ずっと作業中に見える**。
+ * 黙っていると、外からは「見張りが動いていない」と区別がつかない
+ */
+export const RUNNING_WARN_MS = 5 * 60_000;
+
+/**
  * 文面を打ってから確定の CR を送るまでの間隔 (ms)。
  *
  * 貼り付けと見なされる窓を越えるため。実測で 0ms は 0/4、500ms は 4/4。
@@ -202,6 +212,8 @@ interface Entry {
   capped: boolean;
   /** 保留があるのに届け先が待機になった時刻。動けば消す */
   idleSince: number | null;
+  /** 保留があるのに届け先が作業中になった時刻。作業中でなくなれば消す */
+  runningSince: number | null;
   pending: Pending | null;
   /**
    * 諦めた後、ペインが動くまで打ち直さない。
@@ -299,6 +311,7 @@ export class TriggerWatcher {
       typedTimes: [],
       capped: false,
       idleSince: null,
+      runningSince: null,
       pending: null,
       stuck: false,
     });
@@ -582,11 +595,25 @@ export class TriggerWatcher {
     };
     const reason = reasons[pane.status];
     if (reason) {
+      entry.runningSince = null;
       entry.idleSince ??= this.now();
       if (this.now() - entry.idleSince >= IDLE_WARN_MS) entry.error = reason;
       return true;
     }
     entry.idleSince = null;
+
+    // 作業中は待てば届く。ただし長く続いたら言う（返り値は false のまま:
+    // 下の「指示待ちでなければ打たない」でどのみち打たない）
+    if (pane.status === "running") {
+      entry.runningSince ??= this.now();
+      if (this.now() - entry.runningSince >= RUNNING_WARN_MS) {
+        entry.error =
+          `送り先が作業中のまま ${Math.round(RUNNING_WARN_MS / 60_000)} 分以上、` +
+          `届けられずにいます（状態: running）: ${title}`;
+      }
+    } else {
+      entry.runningSince = null;
+    }
     return false;
   }
 
@@ -608,6 +635,7 @@ export class TriggerWatcher {
 
     if (entry.held.length === 0) {
       entry.idleSince = null;
+      entry.runningSince = null;
       return;
     }
 

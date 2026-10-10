@@ -9,6 +9,7 @@ import {
   MAX_SUBMITS,
   PARTIAL_WARN_MS,
   IDLE_WARN_MS,
+  RUNNING_WARN_MS,
 } from "../../lib/trigger-watcher";
 
 /**
@@ -972,11 +973,28 @@ test.describe("届け先が動いていない", () => {
     expect(watcher.state()[0].error).toBe("");
   });
 
-  test("作業中なら長くても出さない", () => {
+  /** 作業中は待てば届く。普通の長い作業（数分）では騒がない */
+  test("作業中なら、作業中の猶予のうちは出さない", () => {
     const { watcher, advance } = heldSetup("running");
-    advance(IDLE_WARN_MS * 10);
+    advance(RUNNING_WARN_MS - 1);
     watcher.check();
     expect(watcher.state()[0].error).toBe("");
+  });
+
+  /**
+   * ★ **作業中のまま、いつまでも黙らない**（2026-10-10、Mac セッションが踏んだ）。
+   *
+   * Mac では claude のペインが立ち、保存ログの上では指示待ちと判定されたのに、
+   * 5 分間、記録が何も出なかった。いまの作りでそうなるのは、生きている画面が
+   * **ずっと作業中と判定されている**ときだけ（画面が 0.4 秒より短い間隔で描き直し
+   * 続けると、出力が止まらず作業中に見える）。作業中は「待てば届く」として黙って
+   * いたので、外から分けられなかった。**長く続いたら、状態の名前つきで言う**
+   */
+  test("作業中のまま作業中の猶予を過ぎたら、状態の名前つきで理由が出る", () => {
+    const { watcher, advance } = heldSetup("running");
+    advance(RUNNING_WARN_MS);
+    watcher.check();
+    expect(watcher.state()[0].error).toContain("running");
   });
 
   /**
