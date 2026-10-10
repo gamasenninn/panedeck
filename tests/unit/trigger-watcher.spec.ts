@@ -751,6 +751,37 @@ test.describe("id の形を確かめてから打つ", () => {
     expect(JSON.stringify(rejected[0])).not.toContain("上の指示");
   });
 
+  /**
+   * ★ **弾いた行の知らせを、記録に出し直さない**（2026-10-10、Mac セッションの指摘）。
+   *
+   * 弾いた行は trigger-rejected で 1 行ずつ記録している。ツールバーの「N 件配りません
+   * でした」も trigger-error として出していたので、他の理由（断片・idle）が出て消える
+   * たびに「配りませんでした」へ戻り、それも変化として**何度も**記録に出ていた
+   */
+  test("他の理由が出て消えても、弾いた知らせは記録に出し直さない", () => {
+    const file = tempFile("");
+    const events: Array<Record<string, unknown>> = [];
+    const { watcher, advance } = setup({
+      onEvent: (e: Record<string, unknown>) => events.push(e),
+    });
+    watcher.add({ watch: file, pane: { title: "a" }, send: T });
+
+    fs.appendFileSync(file, BAD);
+    watcher.check();
+    fs.appendFileSync(file, '{"id":"p"}'); // 断片
+    watcher.check();
+    advance(PARTIAL_WARN_MS);
+    watcher.check(); // 断片の理由が出る
+    fs.appendFileSync(file, "\n"); // 断片が完成して消える
+    watcher.check();
+
+    const rejectedAsError = events.filter(
+      (e) => e.kind === "trigger-error" && String(e.reason).includes("配りませんでした")
+    );
+    expect(rejectedAsError).toEqual([]);
+    expect(events.filter((e) => e.kind === "trigger-rejected")).toHaveLength(1);
+  });
+
   test("文面が {id} を使わなければ、これまでどおり打つ", () => {
     const file = tempFile("");
     const { watcher, sent } = setup();

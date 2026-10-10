@@ -176,6 +176,12 @@ interface Entry {
   /** いちばん古い保留が積まれた時刻（#36）。空になったら消す */
   heldSince: number | null;
   error: string;
+  /**
+   * いまの理由を記録に出さない（ツールバーには出す）。弾いた行の知らせ用 ——
+   * 弾いた行は trigger-rejected で 1 行ずつ記録済みなので、他の理由が出て消える
+   * たびに出し直すと、同じ件が何度も記録に出る（Mac セッションの指摘）
+   */
+  errorQuiet: boolean;
   /** 前回知らせた理由。**変わったときだけ**知らせるため（#36） */
   reported: string;
   /**
@@ -304,6 +310,7 @@ export class TriggerWatcher {
       held: [],
       heldSince: null,
       error: "",
+      errorQuiet: false,
       reported: "",
       lastBytes: null,
       partialSince: null,
@@ -322,6 +329,7 @@ export class TriggerWatcher {
     if (this.listPanes) this.snapshot = this.listPanes();
     for (const entry of this.entries) {
       entry.error = "";
+      entry.errorQuiet = false;
       this.collect(entry);
       if (entry.pending) this.progress(entry);
       else this.deliver(entry);
@@ -354,6 +362,7 @@ export class TriggerWatcher {
   private reportRejected(entry: Entry): void {
     if (entry.error !== "" || entry.rejected === 0) return;
     entry.error = `id が識別子の形でない行を ${entry.rejected} 件配りませんでした: ${entry.config.watch}`;
+    entry.errorQuiet = true;
   }
 
   /**
@@ -366,6 +375,9 @@ export class TriggerWatcher {
     if (entry.error === entry.reported) return;
     const was = entry.reported;
     entry.reported = entry.error;
+
+    // 弾いた行の知らせは記録済み（trigger-rejected）。出し直さない
+    if (entry.error !== "" && entry.errorQuiet) return;
 
     if (entry.error !== "") {
       this.onEvent({
