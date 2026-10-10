@@ -198,7 +198,15 @@ async function createPane(session: Session): Promise<Pane> {
 
   grid.appendChild(el);
   term.open(body);
-  if (backlog) term.write(backlog);
+
+  // このペインへの直接入力（個別 sendkey）。★ **溜まった出力を流し終わってから付ける**
+  // （2026-10-10、受付が見つけた）。xterm の書き込みは非同期なので、先に付けると
+  // backlog の中の問い合わせ（ESC[6n など）への返事が後から出てきて pty へ打ち込まれる。
+  // Mac の claude は ESC[?6n を数百出していたので、付き直すたびに数百の返事が入力欄へ
+  // 流れ込むところだった。流し終わる前に付けなければ、古い問い合わせへの返事は捨てられる
+  const attachInput = () => term.onData((data) => api.input(session.id, data));
+  if (backlog) term.write(backlog, attachInput);
+  else attachInput();
 
   const pane: Pane = {
     id: session.id,
@@ -215,9 +223,6 @@ async function createPane(session: Session): Promise<Pane> {
   panes.set(session.id, pane);
 
   fit(pane);
-
-  // このペインへの直接入力（個別 sendkey）
-  term.onData((data) => api.input(session.id, data));
 
   // 選択したうえでのコピー。これを挟まないと Ctrl+C は pty へ中断として
   // 送られ、Electron 既定メニューの Edit → Copy も効かない（あちらは DOM の

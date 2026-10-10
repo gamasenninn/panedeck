@@ -525,6 +525,59 @@ test.describe("状態の算出", () => {
   });
 });
 
+/**
+ * ★ **文字を出さない出力は、作業として数えない**（2026-10-10、Mac セッションで判明）。
+ *
+ * Mac の claude は、指示待ちのあいだも **\x1b[?6n（カーソル位置の問い合わせ）だけを
+ * 1 秒に何度も**出し続けていた（ログに 671 回、文字 0 バイト）。「出力が来たら作業中」
+ * なので、ずっと作業中と判定され、トリガーは永久に配らなかった。画面の文字を変えない
+ * 出力（問い合わせ・カーソルの切り替え・タイトルの更新）は、作業の印ではない
+ */
+test.describe("文字を出さない出力", () => {
+  const ASK_POSITION = "\x1b[?6n";
+  const READY = "❯ \n  ⏸ manual mode on · ? for shortcuts";
+
+  function claudeSetup() {
+    const ctx = setup();
+    const a = ctx.manager.create({ cwd: "a", agent: "claude" });
+    ctx.ptyFactory.last()!.emitData(READY);
+    ctx.now.advance(QUIET_MS + 100);
+    return { ...ctx, id: a.id };
+  }
+
+  test("問い合わせだけが続いても、作業中にならない", () => {
+    const { manager, ptyFactory, now, id } = claudeSetup();
+    for (let i = 0; i < 10; i += 1) {
+      ptyFactory.last()!.emitData(ASK_POSITION);
+      now.advance(100);
+    }
+    expect(manager.get(id)!.status).toBe(STATUS.READY);
+  });
+
+  test("カーソルの切り替えやタイトルの更新だけでも、作業中にならない", () => {
+    const { manager, ptyFactory, now, id } = claudeSetup();
+    ptyFactory.last()!.emitData("\x1b[?25l\x1b[?25h\x1b]0;claude\x07");
+    now.advance(100);
+    expect(manager.get(id)!.status).toBe(STATUS.READY);
+  });
+
+  /** 作業中の claude は回る印などの文字を出す。それは作業として数える */
+  test("文字が出たら、これまでどおり作業中", () => {
+    const { manager, ptyFactory, now, id } = claudeSetup();
+    ptyFactory.last()!.emitData("\x1b[2K✻ Thinking…");
+    now.advance(100);
+    expect(manager.get(id)!.status).toBe(STATUS.RUNNING);
+  });
+
+  /** 改行や空白だけも、画面に何も描かない */
+  test("改行や空白だけでも、作業中にならない", () => {
+    const { manager, ptyFactory, now, id } = claudeSetup();
+    ptyFactory.last()!.emitData("\r\n  ");
+    now.advance(100);
+    expect(manager.get(id)!.status).toBe(STATUS.READY);
+  });
+});
+
 test.describe("並べ替え", () => {
   function setupThree() {
     const { manager, ptyFactory, now } = setup();

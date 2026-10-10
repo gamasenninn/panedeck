@@ -6,7 +6,7 @@ import type {
   Session,
   BroadcastOptions,
 } from "../types/panedeck";
-import { detectStatus, STATUS } from "./status-detector";
+import { detectStatus, stripAnsi, STATUS } from "./status-detector";
 import { randomUUID } from "crypto";
 
 import { normalizeCommand } from "./command";
@@ -218,7 +218,12 @@ export class SessionManager {
     pty.onData((data) => {
       session.log = this._appendLog(session.log, data);
       screen?.write(data);
-      session.lastOutputAt = this.now();
+      // ★ **文字を出さない出力は、作業として数えない**（2026-10-10）。Mac の claude は
+      // 指示待ちのあいだも ESC[?6n（カーソル位置の問い合わせ）だけを 1 秒に何度も
+      // 出し続け、「出力が来たら作業中」ではずっと作業中になり、トリガーが永久に
+      // 配らなかった。問い合わせ・カーソルの切り替え・タイトルの更新・改行だけは
+      // 画面に文字を描かないので、作業の印にしない
+      if (/\S/.test(stripAnsi(data))) session.lastOutputAt = this.now();
       this.dataHandlers.forEach((cb) => cb(id, data));
     });
 

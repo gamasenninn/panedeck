@@ -500,3 +500,28 @@ test("一度も配っていなくても、見張り始めた位置が設定に�
     .toBe(0);
   expect(await writtenTo(electronApp, 0)).toEqual([]);
 });
+
+/**
+ * ★ **問い合わせだけを出し続けるペインにも届く**（2026-10-10、Mac セッションで判明）。
+ *
+ * Mac の claude は指示待ちのあいだも \x1b[?6n（カーソル位置の問い合わせ）だけを
+ * 1 秒に何度も出し続け、PaneDeck はずっと作業中と判定して配らなかった。偽物の
+ * claude（指示待ちの印を出して静止）では届いた。ここでは、指示待ちの印を出したうえで
+ * 問い合わせだけを出し続けるペインを作り、それでも届くことを見る（受付の案）
+ */
+test("指示待ちのまま問い合わせだけを出し続けるペインにも届く", async () => {
+  await launchWith([{ watch: QUEUE, pane: { title: "受付" }, send: "新着 {count} 件 last={id}" }]);
+  await givenPane("受付", READY_SCREEN);
+
+  // 問い合わせだけを出す（文字は出さない）。★ この spec の時計は止まっているので、
+  // これを「作業」と数えると、最後の出力が今になったまま永久に作業中になる。
+  // 実時間で出し続ける形にすると、最初の 1 回の前に配ってしまい、修正の有無に
+  // 関係なく通った（実際に通った）
+  await emitPtyData(electronApp, 0, "\x1b[?6n");
+
+  fs.appendFileSync(QUEUE, '{"id":"m1"}\n', "utf8");
+
+  await expect
+    .poll(() => writtenTo(electronApp, 0), { timeout: 10_000 })
+    .toContain("新着 1 件 last=m1");
+});
