@@ -24,6 +24,7 @@ import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { lookupDelivery } = require("../dist/lib/delivery-lookup.js");
 const { readSettings } = require("../dist/lib/settings.js");
+const { defaultSettingsPath } = require("../dist/lib/app-paths.js");
 
 const id = (process.argv[2] ?? "").trim();
 if (id === "") {
@@ -31,10 +32,13 @@ if (id === "") {
   process.exit(2);
 }
 
-// 設定の場所は PaneDeck と同じ決め方（試験は PANEDECK_SETTINGS_PATH で差し替える）
-const settingsPath =
-  process.env.PANEDECK_SETTINGS_PATH ||
-  path.join(process.env.APPDATA || path.join(os.homedir(), ".config"), "panedeck", "settings.json");
+// 設定の場所は PaneDeck（Electron の userData）と同じ決め方。macOS では
+// ~/Library/Application Support（以前は ~/.config を見ていて、Mac で見つけられなかった）
+const settingsPath = defaultSettingsPath({
+  platform: process.platform,
+  env: process.env,
+  home: os.homedir(),
+});
 const logDir = readSettings(settingsPath).logDir || path.join(path.dirname(settingsPath), "logs");
 
 const rows = [];
