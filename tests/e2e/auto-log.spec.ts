@@ -262,10 +262,16 @@ test.describe("古いログの片付け", () => {
     await waitForPaneCount(page, 1);
     await emitPtyData(electronApp, 0, "output");
 
+    // ★ 件数では見ない。索引には出来事の記録（events-*.jsonl）も載る。
+    // 自動復元が前の試験のペイン（このマシンに無い作業フォルダ）を開けずに
+    // 「restore-failed」を記録すると、それも載る（2026-10-10 まで、この失敗は
+    // 黙って捨てられていたので件数がたまたま 1 だった）
     await expect
       .poll(() =>
         fs.existsSync(indexPath())
-          ? JSON.parse(fs.readFileSync(indexPath(), "utf8")).length
+          ? JSON.parse(fs.readFileSync(indexPath(), "utf8")).filter((e: { file: string }) =>
+              path.basename(e.file).startsWith("indexed-")
+            ).length
           : 0
       )
       .toBe(1);

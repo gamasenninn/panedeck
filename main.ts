@@ -199,9 +199,35 @@ function applyLogSettings(): void {
  * セッションの生成や終了そのものを失敗させるべきではない。明示的な
  * 「構成を保存」は従来どおり失敗を呼び出し側へ返す。
  */
+/**
+ * 起動時の復元で**開けなかった**ペイン（2026-10-10）。控えに書き戻し続ける。
+ *
+ * 以前は失敗を握りつぶし、開けた分だけで控えを書いていた。全部失敗すると
+ * 0 枚で書き、**控えが消えた**（Mac セッションが踏んだ）。ここに残しておけば、
+ * 後でペインを足したり閉じたりして控えを書き直しても消えず、次の起動でまた試せる
+ */
+let unopened: WorkspaceEntry[] = [];
+
+/**
+ * 控えの 1 行からペインを開く。**開けなければ黙って捨てない**（2026-10-10）:
+ * 理由を記録と stderr に残し（画面の見えない人にも読める）、控えにも残す。
+ * 1 つのディレクトリが消えていても、残りは開く
+ */
+function openOrKeep(entry: WorkspaceEntry): Session | null {
+  try {
+    return openFromEntry(entry);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    unopened.push(entry);
+    events().write({ kind: "restore-failed", title: entry.title, cwd: entry.cwd, reason });
+    process.stderr.write(`[restore-failed] ${entry.title ?? ""} (${entry.cwd}): ${reason}\n`);
+    return null;
+  }
+}
+
 function persistSessions(): void {
   try {
-    saveWorkspace(autoRestorePath(), sessionManager.list(), {
+    saveWorkspace(autoRestorePath(), [...sessionManager.list(), ...unopened], {
       name: "last-session",
     });
   } catch {
@@ -221,13 +247,7 @@ function restoreLastSession(): void {
   const workspace = tryLoadWorkspace(autoRestorePath());
   if (!workspace) return;
 
-  for (const entry of workspace.sessions) {
-    try {
-      openFromEntry(entry);
-    } catch {
-      // 1 つのディレクトリが消えていても、残りは開く
-    }
-  }
+  for (const entry of workspace.sessions) openOrKeep(entry);
 
   // **振り直した会話の id をここで残す（#33）。**
   //
@@ -728,7 +748,8 @@ ipcMain.handle("session:close", (_, id: string) => {
 
 ipcMain.handle("session:closeAll", () => {
   // **閉じる前に**控える。閉じてからでは一覧が空になっている
-  const before = sessionManager.list();
+  // 開けなかったものも含めて控える（「直前の構成に戻す」でまた試せる）
+  const before = [...sessionManager.list(), ...unopened];
   if (before.length > 0) {
     try {
       saveWorkspace(previousPath(), before, { name: "previous" });
@@ -738,6 +759,9 @@ ipcMain.handle("session:closeAll", () => {
   }
   if (logWriter) reportLogFailures(logWriter.closeAll());
   const count = sessionManager.closeAll();
+  // 全終了は「次は空で始めたい」という明示の操作。開けなかったものもここで手放す
+  // （直前の控えには入れてある）
+  unopened = [];
   persistSessions();
   return count;
 });
@@ -753,14 +777,9 @@ ipcMain.handle("workspace:restorePrevious", () => {
   const workspace = tryLoadWorkspace(previousPath());
   if (!workspace) return { ok: false, error: "直前の構成がありません" };
 
-  const created: Session[] = [];
-  for (const entry of workspace.sessions) {
-    try {
-      created.push(openFromEntry(entry));
-    } catch {
-      // 1 つのディレクトリが消えていても、残りは開く
-    }
-  }
+  const created = workspace.sessions
+    .map((entry) => openOrKeep(entry))
+    .filter((session): session is Session => session !== null);
   for (const session of created) logWriter?.open(session.id, session.title);
   persistSessions();
 

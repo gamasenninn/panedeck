@@ -168,6 +168,62 @@ test("起動コマンドとエージェントも復元される", async () => {
   );
 });
 
+/**
+ * ★ **開けなかったペインを黙って捨てない**（2026-10-10、Mac セッションが踏んだ）。
+ *
+ * 自動復元はペインを開くのに失敗すると例外を握りつぶして次へ進み、最後に必ず
+ * 今の構成を書き戻していた。**全部失敗すると 0 枚で書き、控えが消える。** 理由は
+ * どこにも出ない。Mac では控えに 1 枚置いて起動したら、ペインは立たず、控えは空に
+ * なり、理由は分からなかった。Windows では存在しない作業フォルダで同じことが起きる
+ * （node-pty が「Cannot create process, error code: 267」で投げる）
+ */
+test("開けなかったペインは、理由を記録に残し、控えから消さない", async () => {
+  await resetSessions(electronApp, page);
+  fs.writeFileSync(
+    AUTO_PATH,
+    JSON.stringify({
+      name: "last-session",
+      version: 1,
+      sessions: [
+        { title: "ok", cwd: TEMP_DIR, shell: NODE, args: STAY_ALIVE },
+        { title: "gone", cwd: path.join(TEMP_DIR, "no-such-dir"), shell: NODE, args: STAY_ALIVE },
+      ],
+    }),
+    "utf8"
+  );
+
+  await relaunch();
+  await waitForPaneCount(page, 1);
+
+  // 開けたものは開く
+  expect((await listSessions(electronApp)).map((s) => s.title)).toEqual(["ok"]);
+
+  // 開けなかった理由が記録に残る（画面の見えない Mac でも読める）
+  const logs = path.join(TEMP_DIR, "logs");
+  await expect
+    .poll(() =>
+      fs.existsSync(logs)
+        ? fs
+            .readdirSync(logs)
+            .filter((n) => n.startsWith("events-"))
+            .map((n) => fs.readFileSync(path.join(logs, n), "utf8"))
+            .join("")
+        : ""
+    )
+    .toContain("restore-failed");
+  const failed = fs
+    .readdirSync(logs)
+    .filter((n) => n.startsWith("events-"))
+    .flatMap((n) => fs.readFileSync(path.join(logs, n), "utf8").trim().split("\n"))
+    .map((l) => JSON.parse(l))
+    .find((r) => r.kind === "restore-failed");
+  expect(failed.title).toBe("gone");
+  expect(String(failed.reason)).not.toBe("");
+
+  // 控えから消さない。次の起動でまた試せる
+  expect(readAutoSaved().sessions.map((s: { title: string }) => s.title)).toEqual(["ok", "gone"]);
+});
+
 test("全部閉じた状態で再起動すると空のまま", async () => {
   await resetSessions(electronApp, page);
   await givenSession("alpha");
