@@ -20,7 +20,7 @@ import { TriggerWatcher } from "./lib/trigger-watcher";
 import { desiredMailboxes } from "./lib/mailbox";
 import { BuildWatch } from "./lib/build-watch";
 import { createScreen } from "./lib/screen";
-import { resumePlan, shouldRetryFresh } from "./lib/resume-plan";
+import { resumePlan, shouldRetryFresh, keepsSavedConversation } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
 import { folderFromArgv, folderStateDir, servicesForFolder } from "./lib/open-folder";
@@ -241,7 +241,11 @@ function openOrKeep(entry: WorkspaceEntry): Session | null {
 
 function persistSessions(): void {
   try {
-    saveWorkspace(autoRestorePath(), [...sessionManager.list(), ...unopened], {
+    // 立て直したペインは、記録の残る元の会話 id で保存する
+    const live = sessionManager
+      .list()
+      .map((s) => (keptConversations.has(s.id) ? { ...s, sessionId: keptConversations.get(s.id) } : s));
+    saveWorkspace(autoRestorePath(), [...live, ...unopened], {
       name: "last-session",
     });
   } catch {
@@ -323,7 +327,17 @@ function retryWithoutResume(id: string, exitCode: number): void {
   try {
     sessionManager.close(id);
     // **新しい会話で。** 同じ id で起こし直しても、また同じ理由で落ちる
-    sessionManager.create({ ...pending.entry, sessionId: undefined, resume: false });
+    const fresh = sessionManager.create({ ...pending.entry, sessionId: undefined, resume: false });
+    // 記録が残る会話なら、構成には元の id を残す（一時的な失敗で道を断たない）
+    if (
+      keepsSavedConversation({
+        entry: pending.entry,
+        profile: resolveProfile(pending.entry.agent),
+        exists: (file) => fs.existsSync(file),
+      })
+    ) {
+      keptConversations.set(fresh.id, pending.entry.sessionId);
+    }
     events().write({
       kind: "resume-failed",
       title: pending.entry.title ?? null,
@@ -337,6 +351,9 @@ function retryWithoutResume(id: string, exitCode: number): void {
     // 立て直せなくても、残りのペインは動かし続ける
   }
 }
+
+/** 立て直したペイン -> 構成に残す元の会話 id */
+const keptConversations = new Map<string, string | undefined>();
 
 /** 再開で起こしたペイン。落ちたら 1 回だけ立て直す */
 const pendingResumes = new Map<string, { entry: WorkspaceEntry; at: number }>();

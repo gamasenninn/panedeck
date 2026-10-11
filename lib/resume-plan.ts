@@ -89,3 +89,27 @@ export function resumePlan({
     return FRESH;
   }
 }
+
+/**
+ * 再開が落ちて新しい会話で立て直したとき、構成に元の会話 id を残すか。
+ *
+ * 記録が残っているなら残す —— 落ちた理由が一時的（自動更新・メモリ不足など）
+ * かもしれず、id を捨てると記録の残る会話へ二度と戻れない。記録が無い id は
+ * 残さない（毎回試して毎回落ちる輪になる）。
+ */
+export function keepsSavedConversation({
+  entry,
+  profile,
+  exists,
+}: {
+  entry: WorkspaceEntry;
+  profile: ResumeProfile;
+  exists: (file: string) => boolean;
+}): boolean {
+  if (!entry.sessionId || !profile.recordFile) return false;
+  try {
+    return exists(profile.recordFile(entry.cwd, entry.sessionId));
+  } catch {
+    return false;
+  }
+}

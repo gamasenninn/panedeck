@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import {
   resumePlan,
   shouldRetryFresh,
+  keepsSavedConversation,
   RESUME_FAILED_MS,
 } from "../../lib/resume-plan";
 
@@ -137,5 +138,55 @@ test.describe("再開の失敗とみなすか", () => {
 
   test("境界では失敗とみなす", () => {
     expect(shouldRetryFresh({ exitCode: 1, msSinceLaunch: W })).toBe(true);
+  });
+});
+
+/**
+ * 再開が落ちて新しい会話で立て直しても、**記録がある会話の id は構成に残す**。
+ *
+ * 一時的な失敗（自動更新・メモリ不足など）で、記録の残る会話への道を断たない。
+ * 立て直したペインは新しい会話で動くが、保存するのは元の id。
+ */
+test.describe("立て直しても元の会話を残す", () => {
+  const entry = { cwd: "/work", args: [], sessionId: "uuid-1" };
+
+  test("記録が残っていれば、元の id を残す", () => {
+    expect(
+      keepsSavedConversation({ entry, profile: withRecord, exists: () => true }),
+    ).toBe(true);
+  });
+
+  test("記録が無ければ残さない（死んだ id を永久に試さないため）", () => {
+    expect(
+      keepsSavedConversation({ entry, profile: withRecord, exists: () => false }),
+    ).toBe(false);
+  });
+
+  test("記録の場所を宣言しないプロファイルは残さない", () => {
+    expect(
+      keepsSavedConversation({ entry, profile: bare, exists: () => true }),
+    ).toBe(false);
+  });
+
+  test("id が無ければ残さない", () => {
+    expect(
+      keepsSavedConversation({
+        entry: { cwd: "/work", args: [] },
+        profile: withRecord,
+        exists: () => true,
+      }),
+    ).toBe(false);
+  });
+
+  test("調べて例外になっても残さない", () => {
+    expect(
+      keepsSavedConversation({
+        entry,
+        profile: withRecord,
+        exists: () => {
+          throw new Error("x");
+        },
+      }),
+    ).toBe(false);
   });
 });
