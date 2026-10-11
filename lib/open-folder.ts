@@ -11,6 +11,7 @@
  * Electron に依存しない。「フォルダか」の判定は注入する。
  */
 
+import crypto from "crypto";
 import path from "path";
 import type { OpenFolder } from "../types/panedeck";
 
@@ -25,4 +26,26 @@ export function folderFromArgv(
 
   const target = path.resolve(args[0]);
   return isDirectory(target) ? { folder: target } : { missing: target };
+}
+
+/**
+ * 構成の控え（last-session.json など）を置く場所（2026-10-11）。
+ *
+ * フォルダを開いていなければ設定と同じ場所（今までどおり）。開いていれば
+ * `folders/<名前>-<ハッシュ>/`。VS Code と同じく、構成はフォルダごとに持つ。
+ * 共通の控えを戻すと、`C:\system` を開いたのに本体・受付のペインが出て、
+ * 同じ会話を二重に再開した。
+ *
+ * 名前は人が見て分かるように付けるだけで、区別はハッシュがする
+ */
+export function folderStateDir(
+  baseDir: string,
+  folder: string | undefined,
+  { caseInsensitive = false }: { caseInsensitive?: boolean } = {}
+): string {
+  if (!folder) return baseDir;
+  const key = caseInsensitive ? folder.toLowerCase() : folder;
+  const hash = crypto.createHash("sha256").update(key).digest("hex").slice(0, 8);
+  const name = path.basename(key) || key.replace(/[^A-Za-z0-9]/g, "") || "root";
+  return path.join(baseDir, "folders", `${name}-${hash}`);
 }

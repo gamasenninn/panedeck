@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "path";
-import { folderFromArgv } from "../../lib/open-folder";
+import { folderFromArgv, folderStateDir } from "../../lib/open-folder";
 
 /**
  * 起動の引数から「開くフォルダ」を決める（VS Code の `code <フォルダ>` と同じ考え）。
@@ -69,5 +69,49 @@ test.describe("起動の引数から開くフォルダを決める", () => {
       isDirectory: (p) => p === path.resolve("."),
     });
     expect(result).toEqual({ folder: path.resolve(".") });
+  });
+});
+
+/**
+ * フォルダを開いたときの、構成の控えの置き場所（2026-10-11）。
+ *
+ * フォルダを開いても共通の控え（last-session.json）を戻していたので、
+ * `C:\system` を開いたら本体・受付のペインが出て、同じ会話を二重に再開した。
+ * VS Code と同じく、構成はフォルダごとに持つ
+ */
+test.describe("構成の控えの置き場所", () => {
+  const BASE = path.resolve("C:/Users/me/AppData/Roaming/panedeck");
+
+  test("フォルダを開いていなければ、今までどおり設定と同じ場所", () => {
+    expect(folderStateDir(BASE, undefined)).toBe(BASE);
+  });
+
+  test("フォルダを開いていれば、folders/ の下のそのフォルダ用の場所", () => {
+    const dir = folderStateDir(BASE, path.resolve("C:/system"));
+    expect(path.dirname(dir)).toBe(path.join(BASE, "folders"));
+    // 人が見て分かるように、フォルダの名前を頭に付ける
+    expect(path.basename(dir)).toMatch(/^system-[0-9a-f]{8}$/);
+  });
+
+  test("同じフォルダなら、毎回同じ場所", () => {
+    const folder = path.resolve("C:/system");
+    expect(folderStateDir(BASE, folder)).toBe(folderStateDir(BASE, folder));
+  });
+
+  test("名前が同じでも、別のフォルダなら別の場所", () => {
+    expect(folderStateDir(BASE, path.resolve("C:/a/system"))).not.toBe(
+      folderStateDir(BASE, path.resolve("C:/b/system"))
+    );
+  });
+
+  test("大文字小文字を区別しないなら、c:\\system と C:\\System は同じ場所", () => {
+    const options = { caseInsensitive: true };
+    expect(folderStateDir(BASE, "c:\\system", options)).toBe(
+      folderStateDir(BASE, "C:\\System", options)
+    );
+  });
+
+  test("ドライブの直下でも名前が空にならない", () => {
+    expect(path.basename(folderStateDir(BASE, "C:\\"))).toMatch(/^[^-]+-[0-9a-f]{8}$/);
   });
 });

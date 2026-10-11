@@ -23,7 +23,7 @@ import { createScreen } from "./lib/screen";
 import { resumePlan, shouldRetryFresh } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
-import { folderFromArgv } from "./lib/open-folder";
+import { folderFromArgv, folderStateDir } from "./lib/open-folder";
 import { secondLaunchNotice } from "./lib/second-launch";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
@@ -54,7 +54,18 @@ function settingsPath(): string {
  * こちらはセッションの増減のたびに黙って上書きされる。
  */
 function autoRestorePath(): string {
-  return path.join(path.dirname(settingsPath()), "last-session.json");
+  return path.join(stateDir(), "last-session.json");
+}
+
+/**
+ * 構成の控えを置く場所。フォルダを開いていれば、そのフォルダ用の場所（2026-10-11）。
+ * 共通の控えを戻すと、`C:\system` を開いたのに本体・受付のペインが出て、同じ会話を
+ * 二重に再開した。設定・ログ・トリガーは共通のまま
+ */
+function stateDir(): string {
+  return folderStateDir(path.dirname(settingsPath()), openFolder.folder, {
+    caseInsensitive: process.platform === "win32",
+  });
 }
 
 /**
@@ -65,7 +76,7 @@ function autoRestorePath(): string {
  * 人が押したときだけ戻す。**自動では戻さない**（全部閉じたら次は空のまま）
  */
 function previousPath(): string {
-  return path.join(path.dirname(settingsPath()), "last-session.previous.json");
+  return path.join(stateDir(), "last-session.previous.json");
 }
 
 /** ログの出力先。設定が空なら設定ファイルと同じ場所の logs/ */

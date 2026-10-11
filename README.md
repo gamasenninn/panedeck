@@ -327,6 +327,7 @@ panedeck .
 
 The Windows installer adds its folder to your user `PATH` (open a new terminal afterwards), so `panedeck` works from anywhere; uninstalling removes it again. Only that one entry is touched.
 
+- The panes you had open are remembered **per folder**: opening `C:\system` brings back the panes from the last time you worked there, not the ones from a launch without a folder
 - **+ New session** opens a pane there without asking where; the 📁 button next to it picks another place
 - Services run there, so a command can use paths relative to the folder
 - The window title shows the folder. A folder that does not exist is reported, not silently ignored
