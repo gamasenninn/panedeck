@@ -302,3 +302,36 @@ test("再開したペインの id は変わらない", async () => {
   const saved = JSON.parse(fs.readFileSync(RESTORE_PATH, "utf8"));
   expect(saved.sessions[0].sessionId).toBe(id);
 });
+
+/**
+ * 記録が残る会話の再開が落ちたら、立て直す前にもう一度だけ再開を試す。
+ * それでも落ちたら新しい会話で立て直すが、構成には元の id を残す。
+ *
+ * 起動コマンドは `exit 1 #`: 後ろに付く会話の指定がコメントになり、
+ * ペインは必ず終了コード 1 ですぐ終わる。
+ */
+test("記録が残る会話の再開が落ちたら、もう一度試してから立て直し、元の id を残す", async () => {
+  const id = "44444444-5555-6666-7777-888888888888";
+  const file = recordFile(WORK, id);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "{}\n", "utf8");
+  madeRecords.push(file);
+
+  await launchWith([
+    { cwd: WORK, args: [], initialCommand: "exit 1 #", agent: "claude", sessionId: id },
+  ]);
+  await waitForPaneCount(page, 1);
+
+  // 2 回目の再開も落ちて、新しい会話で立て直される
+  await expect
+    .poll(
+      () =>
+        electronApp.evaluate(() => global.__sessionManager.list()[0]?.sessionId),
+      { timeout: 20_000 }
+    )
+    .not.toBe(id);
+
+  // 構成には元の id が残っている
+  const saved = JSON.parse(fs.readFileSync(RESTORE_PATH, "utf8"));
+  expect(saved.sessions[0].sessionId).toBe(id);
+});

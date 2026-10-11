@@ -20,7 +20,7 @@ import { TriggerWatcher } from "./lib/trigger-watcher";
 import { desiredMailboxes } from "./lib/mailbox";
 import { BuildWatch } from "./lib/build-watch";
 import { createScreen } from "./lib/screen";
-import { resumePlan, shouldRetryFresh, keepsSavedConversation } from "./lib/resume-plan";
+import { resumePlan, shouldRetryFresh, keepsSavedConversation, afterResumeFailure } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
 import { folderFromArgv, folderStateDir, servicesForFolder } from "./lib/open-folder";
@@ -308,13 +308,14 @@ function openFromEntry(entry: WorkspaceEntry): Session {
  * 立て直しの輪に入る。
  */
 function watchResume(id: string, entry: WorkspaceEntry): void {
-  pendingResumes.set(id, { entry, at: Date.now() });
+  pendingResumes.set(id, { entry, at: Date.now(), retried: false });
 }
 
 /**
  * 再開で起こしたペインが落ちたなら、新しい会話で立て直す。
  *
- * **1 回だけ。** 立て直したペインは見張りから外すので、輪には入らない。
+ * **1 回だけ。** 記録が残る会話は、立て直す前に再開をもう一度だけ試す。
+ * 立て直したペインは見張りから外すので、輪には入らない。
  */
 function retryWithoutResume(id: string, exitCode: number): void {
   const pending = pendingResumes.get(id);
@@ -324,20 +325,37 @@ function retryWithoutResume(id: string, exitCode: number): void {
   // 判断は lib/ 側。ここは起こし直すだけ
   if (!shouldRetryFresh({ exitCode, msSinceLaunch: Date.now() - pending.at })) return;
 
+  const recordKept = keepsSavedConversation({
+    entry: pending.entry,
+    profile: resolveProfile(pending.entry.agent),
+    exists: (file) => fs.existsSync(file),
+  });
+
   try {
     sessionManager.close(id);
+
+    // 記録が残る会話は、立て直す前に**もう一度だけ**再開を試す（一時的な失敗なら通る）
+    if (afterResumeFailure({ recordKept, retried: pending.retried }) === "retry-resume") {
+      const again = sessionManager.create({
+        ...pending.entry,
+        sessionId: pending.entry.sessionId,
+        resume: true,
+      });
+      pendingResumes.set(again.id, { entry: pending.entry, at: Date.now(), retried: true });
+      events().write({
+        kind: "resume-retry",
+        title: pending.entry.title ?? null,
+        savedId: pending.entry.sessionId ?? null,
+        exitCode,
+      });
+      persistSessions();
+      return;
+    }
+
     // **新しい会話で。** 同じ id で起こし直しても、また同じ理由で落ちる
     const fresh = sessionManager.create({ ...pending.entry, sessionId: undefined, resume: false });
     // 記録が残る会話なら、構成には元の id を残す（一時的な失敗で道を断たない）
-    if (
-      keepsSavedConversation({
-        entry: pending.entry,
-        profile: resolveProfile(pending.entry.agent),
-        exists: (file) => fs.existsSync(file),
-      })
-    ) {
-      keptConversations.set(fresh.id, pending.entry.sessionId);
-    }
+    if (recordKept) keptConversations.set(fresh.id, pending.entry.sessionId);
     events().write({
       kind: "resume-failed",
       title: pending.entry.title ?? null,
@@ -356,7 +374,7 @@ function retryWithoutResume(id: string, exitCode: number): void {
 const keptConversations = new Map<string, string | undefined>();
 
 /** 再開で起こしたペイン。落ちたら 1 回だけ立て直す */
-const pendingResumes = new Map<string, { entry: WorkspaceEntry; at: number }>();
+const pendingResumes = new Map<string, { entry: WorkspaceEntry; at: number; retried: boolean }>();
 
 // 「すぐ」の線引きは lib/resume-plan.ts（RESUME_FAILED_MS）。
 // 判断を 2 箇所に置かない

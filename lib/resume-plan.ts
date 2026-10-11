@@ -113,3 +113,20 @@ export function keepsSavedConversation({
     return false;
   }
 }
+
+/**
+ * 再開が落ちたあとの次の手。
+ *
+ * 記録が残る会話は、**立て直す前にもう一度だけ再開を試す** —— 落ちた理由が
+ * 一時的（自動更新など）なら通る。それでも落ちたら新しい会話で立て直す。
+ * 記録が無い会話は、試しても通らないのですぐ立て直す。
+ */
+export function afterResumeFailure({
+  recordKept,
+  retried,
+}: {
+  recordKept: boolean;
+  retried: boolean;
+}): "retry-resume" | "fresh" {
+  return recordKept && !retried ? "retry-resume" : "fresh";
+}

@@ -3,6 +3,7 @@ import {
   resumePlan,
   shouldRetryFresh,
   keepsSavedConversation,
+  afterResumeFailure,
   RESUME_FAILED_MS,
 } from "../../lib/resume-plan";
 
@@ -188,5 +189,25 @@ test.describe("立て直しても元の会話を残す", () => {
         },
       }),
     ).toBe(false);
+  });
+});
+
+/**
+ * 再開が落ちたあと、どうするか。
+ *
+ * 記録が残る会話は、**立て直す前にもう一度だけ再開を試す**（一時的な失敗なら通る）。
+ * それでも落ちたら新しい会話で立て直す。記録が無ければ試さず、すぐ立て直す。
+ */
+test.describe("再開が落ちたあとの次の手", () => {
+  test("記録が残り、まだ試していなければ、もう一度再開する", () => {
+    expect(afterResumeFailure({ recordKept: true, retried: false })).toBe("retry-resume");
+  });
+
+  test("もう一度試して落ちたなら、新しい会話で立て直す", () => {
+    expect(afterResumeFailure({ recordKept: true, retried: true })).toBe("fresh");
+  });
+
+  test("記録が無ければ、試さず立て直す", () => {
+    expect(afterResumeFailure({ recordKept: false, retried: false })).toBe("fresh");
   });
 });
