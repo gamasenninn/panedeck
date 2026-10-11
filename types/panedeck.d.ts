@@ -237,6 +237,17 @@ export interface TriggerState {
 }
 
 /** 裏で走らせ続けるコマンド（#29） */
+/**
+ * 起動の引数で開いたフォルダ（2026-10-11）。VS Code の `code <フォルダ>` と同じ考えで、
+ * 新しいペインも裏のコマンドもそこで動く
+ */
+export interface OpenFolder {
+  /** 開いたフォルダ（絶対パス） */
+  folder?: string;
+  /** 渡されたが、フォルダとして開けなかった場所。黙って今までどおりに起動しない */
+  missing?: string;
+}
+
 export interface ServiceConfig {
   /** 画面に出す名前。ログの宛先でもあるので重複させない */
   name: string;
@@ -336,6 +347,8 @@ export interface DeckApi {
   listTriggers(): Promise<TriggerState[]>;
   /** 動いているのが古いビルドか。中身で比べる（2026-10-10） */
   isStale(): Promise<boolean>;
+  /** 起動の引数で開いたフォルダ（2026-10-11）。開いていなければ空 */
+  openFolder(): Promise<OpenFolder>;
   /** 全終了の直前の構成が何個ぶん残っているか（2026-10-09） */
   countPrevious(): Promise<number>;
   /** 全終了の直前の構成に戻す。人が押したときだけ */

@@ -25,6 +25,9 @@ node-pty + xterm.js。
 - **郵便受け**（#34）: ペインごとのファイルで、ペインどうしが起こし合う。決まりは
   `docs/mailbox.md`、届いたかは `scripts/check-delivery.mjs <id>`
 - 裏で走らせ続けるコマンド（#29）・出来事の記録 `events-YYYYMMDD.jsonl`（#36）
+- **フォルダを開いて起動**（`PaneDeck.exe C:\system`）: VS Code の `code <フォルダ>` と
+  同じ考えで、「+ セッション追加」も裏のコマンドもそのフォルダで動く。フォルダごとの
+  設定（`.panedeck/`）は、信頼の確認とセットで後から
 
 ## 引き継ぎ
 
@@ -184,6 +187,7 @@ panedeck/
 │   ├── delivery-lookup.ts   # id から「届いたか」を判断する（#37）
 │   ├── build-watch.ts       # 動いているのが古いビルドか（中身で比べる）
 │   ├── app-paths.ts         # PaneDeck の外から設定の場所を決める（OS ごと）
+│   ├── open-folder.ts       # 起動の引数から開くフォルダを決める（`PaneDeck.exe <フォルダ>`）
 │   ├── service-runner.ts    # 裏のコマンドの起こし直し（時刻も起動も注入）
 │   ├── spawn-service.ts     # 実プロセスの起動（ここだけ child_process を知る）
 │   └── workspace.ts         # セッション構成の保存・復元

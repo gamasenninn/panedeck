@@ -27,8 +27,11 @@ const disposableDirs = new Map<ElectronApplication, string[]>();
 export async function launchApp({
   settingsPath,
   recordVideo,
+  args = [],
 }: {
   settingsPath?: string;
+  /** アプリへ渡す引数（例: 開くフォルダ）。アプリの場所の後ろに付く */
+  args?: string[];
   /**
    * 画面を録る（デモ収録用。テストでは使わない）。
    *
@@ -47,7 +50,7 @@ export async function launchApp({
   const resolved = settingsPath ?? path.join(disposableSettings!, "settings.json");
 
   const electronApp = await electron.launch({
-    args: [APP_PATH],
+    args: [APP_PATH, ...args],
     ...(recordVideo ? { recordVideo } : {}),
     env: {
       ...process.env,

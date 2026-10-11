@@ -316,6 +316,20 @@ So the events are appended to `events-YYYYMMDD.jsonl` beside the pane logs, unde
 
 **Nothing is written per poll.** An unreachable pane would otherwise produce three lines a second; the reason is recorded once and again when it changes. A quiet day costs almost nothing, which is what makes the file worth reading.
 
+### Opening a folder
+
+Like `code <folder>`, you can start PaneDeck in a folder:
+
+```
+PaneDeck.exe C:\system
+```
+
+- **+ New session** opens a pane there without asking where; the 📁 button next to it picks another place
+- Services run there, so a command can use paths relative to the folder
+- The window title shows the folder. A folder that does not exist is reported, not silently ignored
+
+Per-folder settings (a `.panedeck/` inside the folder) are not there yet: opening a folder would then run the commands it contains, so it waits for a trust prompt like VS Code's.
+
 ### Keeping a command running (services)
 
 A trigger covers the case where something on this machine writes the file. When the source is remote, something local has to hold the connection and write what it receives — and that something, run inside an agent's pane, dies with the pane.

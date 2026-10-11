@@ -852,8 +852,22 @@ async function pickLogDir() {
   await commitSetting({ logDir: dir });
 }
 
+/**
+ * 起動の引数で開いたフォルダ（2026-10-11）。開いていれば「+ セッション追加」は
+ * 場所を聞かずにそこで作る（VS Code の新しいターミナルと同じ）
+ */
+let openFolder: string | undefined;
+
 async function addSession() {
-  const cwd = await api.pickDirectory();
+  await addSessionIn(openFolder ?? (await api.pickDirectory()));
+}
+
+/** 開いたフォルダとは別の場所で作る */
+async function addSessionElsewhere() {
+  await addSessionIn(await api.pickDirectory());
+}
+
+async function addSessionIn(cwd: string | null) {
   if (!cwd) return;
 
   const result = await api.createSession({
@@ -926,6 +940,7 @@ async function sendKey(key: string) {
 // ---------------------------------------------------------------- イベント
 
 document.getElementById("add-session")!.addEventListener("click", addSession);
+document.getElementById("add-session-elsewhere")!.addEventListener("click", addSessionElsewhere);
 
 document.getElementById("broadcast-send")!.addEventListener("click", sendBroadcast);
 
@@ -1110,8 +1125,23 @@ setInterval(async () => {
   if (!buildStaleEl.hidden) return; // 一度出たら出たまま（再起動するまで古い）
   buildStaleEl.hidden = !(await api.isStale());
 }, 5000);
+/** 開いたフォルダを題とボタンに出す。開けなかった場所は黙らずに知らせる */
+async function showOpenFolder() {
+  const opened = await api.openFolder();
+  if (opened.folder) {
+    openFolder = opened.folder;
+    document.title = `${opened.folder} — PaneDeck`;
+    (document.getElementById("add-session-elsewhere") as HTMLButtonElement).hidden = false;
+  } else if (opened.missing) {
+    showMessage(`フォルダを開けません（無いか、フォルダではない）: ${opened.missing}`, {
+      error: true,
+    });
+  }
+}
+
 setupAgentSelect();
 loadSettings();
+showOpenFolder();
 sync();
 // 前回の起動で全終了したまま閉じていれば、空の画面に戻すボタンが出る
 showRestorePrevious();

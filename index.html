@@ -196,6 +196,7 @@
         z-index: 100;
       }
 
+      #add-session-elsewhere[hidden],
       #close-all-backdrop[hidden],
       #service-backdrop[hidden],
       #settings-backdrop[hidden] {
@@ -617,6 +618,15 @@
 
       <button id="add-session" class="primary" data-testid="add-session">
         + セッション追加
+      </button>
+      <!-- フォルダを開いて起動したときだけ出る。「+」はそのフォルダで作るので、別の場所はこちら -->
+      <button
+        id="add-session-elsewhere"
+        data-testid="add-session-elsewhere"
+        title="場所を選んでセッションを追加"
+        hidden
+      >
+        📁
       </button>
 
       <div class="divider"></div>

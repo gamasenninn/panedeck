@@ -22,6 +22,7 @@ import { createScreen } from "./lib/screen";
 import { resumePlan, shouldRetryFresh } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
+import { folderFromArgv } from "./lib/open-folder";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
 import { EventLog } from "./lib/event-log";
@@ -541,7 +542,8 @@ function startServices(): void {
   if (settings.services.length === 0) return;
 
   serviceRunner = new ServiceRunner({
-    spawn: spawnService,
+    // 開いたフォルダで動かす。相対パスのコマンドがそこで解決される（2026-10-11）
+    spawn: (command) => spawnService(command, { cwd: openFolder.folder }),
     // 復帰すると表示から消えるので、ここで残す（#36）
     onEvent: (event) => events().write(event),
   });
@@ -722,6 +724,22 @@ ipcMain.handle("trigger:list", () => triggerWatcher?.state() ?? []);
  * 出ない）。見る場所は E2E のために差し替えられる
  */
 let buildWatch: BuildWatch | null = null;
+
+/**
+ * 起動の引数で開いたフォルダ（2026-10-11）。VS Code の `code <フォルダ>` と同じ考えで、
+ * 新しいペインも裏のコマンドもそこで動く。起動のあいだは変わらない
+ */
+const openFolder = folderFromArgv(process.argv, {
+  defaultApp: Boolean(process.defaultApp),
+  isDirectory: (p) => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  },
+});
+ipcMain.handle("app:openFolder", () => openFolder);
 ipcMain.handle("app:stale", () => {
   buildWatch ??= new BuildWatch(
     process.env.PANEDECK_BUILD_DIR || path.join(app.getAppPath(), "dist")

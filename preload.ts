@@ -24,6 +24,7 @@ const deck: DeckApi = {
   listAgents: () => ipcRenderer.invoke("agent:list"),
   listTriggers: () => ipcRenderer.invoke("trigger:list"),
   isStale: () => ipcRenderer.invoke("app:stale"),
+  openFolder: () => ipcRenderer.invoke("app:openFolder"),
   countPrevious: () => ipcRenderer.invoke("workspace:previous"),
   restorePrevious: () => ipcRenderer.invoke("workspace:restorePrevious"),
   releaseTrigger: (watch: string) => ipcRenderer.invoke("trigger:release", watch),

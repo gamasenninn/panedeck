@@ -19,9 +19,14 @@ import type { ServiceProcess } from "./service-runner";
 
 const isWindows = process.platform === "win32";
 
-export function spawnService(command: string): ServiceProcess {
+export function spawnService(
+  command: string,
+  { cwd }: { cwd?: string } = {}
+): ServiceProcess {
   const child = spawnProcess(command, {
     shell: true,
+    // 開いたフォルダ（2026-10-11）。無ければ PaneDeck を起動した場所のまま
+    cwd,
     windowsHide: true,
     // 他の OS では、自分を長とするプロセスグループにして、まとめて落とせるように
     detached: !isWindows,
