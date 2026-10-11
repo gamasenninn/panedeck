@@ -23,7 +23,7 @@ import { createScreen } from "./lib/screen";
 import { resumePlan, shouldRetryFresh } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
-import { folderFromArgv, folderStateDir } from "./lib/open-folder";
+import { folderFromArgv, folderStateDir, servicesForFolder } from "./lib/open-folder";
 import { secondLaunchNotice } from "./lib/second-launch";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
@@ -551,8 +551,12 @@ function startTriggers(): void {
  * ファイルを見ているトリガーの仕事（#28）。
  */
 function startServices(): void {
-  const settings = readSettings(settingsPath());
-  if (settings.services.length === 0) return;
+  // サービスもフォルダごと（2026-10-11）。folder のあるものはそのフォルダを開いたときだけ、
+  // 無いものはフォルダを開かずに起動したときだけ動く
+  const services = servicesForFolder(readSettings(settingsPath()).services, openFolder.folder, {
+    caseInsensitive: process.platform === "win32",
+  });
+  if (services.length === 0) return;
 
   serviceRunner = new ServiceRunner({
     // 開いたフォルダで動かす。相対パスのコマンドがそこで解決される（2026-10-11）
@@ -560,7 +564,7 @@ function startServices(): void {
     // 復帰すると表示から消えるので、ここで残す（#36）
     onEvent: (event) => events().write(event),
   });
-  serviceRunner.start(settings.services);
+  serviceRunner.start(services);
   setInterval(() => serviceRunner?.tick(), SERVICE_TICK_MS);
 }
 

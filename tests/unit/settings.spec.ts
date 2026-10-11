@@ -480,6 +480,20 @@ test.describe("services", () => {
     expect(services.map((s) => s.restart)).toEqual(["never", "always", "always"]);
   });
 
+  /** サービスはフォルダごと（2026-10-11）。folder があれば、そのフォルダを開いたときだけ動く */
+  test("folder は前後の空白を落として残し、空や文字列でないものは無かったことにする", () => {
+    const services = normalizeSettings({
+      services: [
+        { name: "a", command: "x", folder: "  C:\\system  " },
+        { name: "b", command: "x", folder: "" },
+        { name: "c", command: "x", folder: 3 },
+        { name: "d", command: "x" },
+      ],
+    }).services;
+
+    expect(services.map((s) => s.folder)).toEqual(["C:\\system", undefined, undefined, undefined]);
+    expect(services[3]).not.toHaveProperty("folder");
+  });
   /** 名前はログの宛先なので、重なると取り違える */
   test("同じ名前は最初のものだけ残す", () => {
     const services = normalizeSettings({

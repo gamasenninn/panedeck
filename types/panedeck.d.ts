@@ -254,6 +254,8 @@ export interface ServiceConfig {
   command: string;
   /** 既定は always */
   restart: "always" | "never";
+  /** このフォルダを開いたときだけ動く。無ければ、フォルダを開かずに起動したときだけ動く */
+  folder?: string;
 }
 
 /** 画面に出すためのサービスの様子（#29） */

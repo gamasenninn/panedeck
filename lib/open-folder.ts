@@ -49,3 +49,23 @@ export function folderStateDir(
   const name = path.basename(key) || key.replace(/[^A-Za-z0-9]/g, "") || "root";
   return path.join(baseDir, "folders", `${name}-${hash}`);
 }
+
+/**
+ * 開いたフォルダで動かすサービス（2026-10-11）。サービスもフォルダごとに持つ。
+ *
+ * `folder` のあるものはそのフォルダを開いたときだけ、無いものはフォルダを開かずに
+ * 起動したときだけ動く。本番のサービスを全体に書くと、開発用の PaneDeck でも動き、
+ * 並べると二重に動くため
+ */
+export function servicesForFolder<T extends { folder?: string }>(
+  services: T[],
+  folder: string | undefined,
+  { caseInsensitive = false }: { caseInsensitive?: boolean } = {}
+): T[] {
+  const norm = (p: string) => {
+    const resolved = path.resolve(p);
+    return caseInsensitive ? resolved.toLowerCase() : resolved;
+  };
+  if (!folder) return services.filter((s) => !s.folder);
+  return services.filter((s) => s.folder !== undefined && norm(s.folder) === norm(folder));
+}

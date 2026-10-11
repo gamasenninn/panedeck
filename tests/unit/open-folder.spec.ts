@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import path from "path";
-import { folderFromArgv, folderStateDir } from "../../lib/open-folder";
+import { folderFromArgv, folderStateDir, servicesForFolder } from "../../lib/open-folder";
 
 /**
  * 起動の引数から「開くフォルダ」を決める（VS Code の `code <フォルダ>` と同じ考え）。
@@ -113,5 +113,39 @@ test.describe("構成の控えの置き場所", () => {
 
   test("ドライブの直下でも名前が空にならない", () => {
     expect(path.basename(folderStateDir(BASE, "C:\\"))).toMatch(/^[^-]+-[0-9a-f]{8}$/);
+  });
+});
+
+/**
+ * どのサービスを動かすか（2026-10-11）。サービスもフォルダごとに持つ。
+ * 本番のサービスを全体の設定に書くと、開発用の PaneDeck を起動しても動き、
+ * 開発用と本番用を並べると二重に動くため
+ */
+test.describe("フォルダを開いたときに動かすサービス", () => {
+  type Service = { name: string; command: string; folder?: string };
+  const plain: Service = { name: "plain", command: "x" };
+  const system: Service = { name: "system", command: "x", folder: "C:\\system" };
+  const work: Service = { name: "work", command: "x", folder: "C:\\work" };
+  const all = [plain, system, work];
+  const names = (list: { name: string }[]) => list.map((s) => s.name);
+
+  test("フォルダを開いていなければ、folder の無いものだけ（今までどおり）", () => {
+    expect(names(servicesForFolder(all, undefined))).toEqual(["plain"]);
+  });
+
+  test("フォルダを開いていれば、そのフォルダのものだけ（folder の無いものは動かさない）", () => {
+    expect(names(servicesForFolder(all, path.resolve("C:\\system")))).toEqual(["system"]);
+  });
+
+  test("書き方の揺れ（末尾の \\）は同じフォルダとみなす", () => {
+    const trailing = { ...system, folder: "C:\\system\\" };
+    expect(names(servicesForFolder([trailing], path.resolve("C:\\system")))).toEqual(["system"]);
+  });
+
+  test("大文字小文字を区別しないなら、c:\\System でも合う", () => {
+    expect(
+      names(servicesForFolder(all, "c:\\System", { caseInsensitive: true }))
+    ).toEqual(["system"]);
+    expect(names(servicesForFolder(all, "c:\\System"))).toEqual([]);
   });
 });

@@ -69,7 +69,10 @@ function normalizeService(raw: unknown): ServiceConfig | null {
   const command = typeof source.command === "string" ? source.command.trim() : "";
   if (name === "" || command === "") return null;
 
-  return { name, command, restart: source.restart === "never" ? "never" : "always" };
+  const restart = source.restart === "never" ? "never" : "always";
+  // このフォルダを開いたときだけ動く（2026-10-11）。空なら無かったことにする
+  const folder = typeof source.folder === "string" ? source.folder.trim() : "";
+  return folder === "" ? { name, command, restart } : { name, command, restart, folder };
 }
 
 /**

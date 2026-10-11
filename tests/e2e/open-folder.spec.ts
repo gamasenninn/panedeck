@@ -19,6 +19,8 @@ const TEMP_DIR = path.join(__dirname, "temp-open-folder");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");
 /** 開くフォルダ。設定とは別の場所にする（同じだと、どちらで解決されたか分からない） */
 const FOLDER = path.join(TEMP_DIR, "work");
+/** 開いていないフォルダ（そこ向けのサービスは動かない） */
+const OTHER_FOLDER = path.join(TEMP_DIR, "other");
 /** 裏のコマンドが**相対パスで**書くファイル。開いたフォルダに出来れば、そこで動いた */
 const MARK = "service-ran.txt";
 
@@ -72,7 +74,10 @@ test.describe("フォルダを開いて起動する", () => {
   });
 
   test("裏のコマンドは、開いたフォルダで動く（相対パスがそこで解決される）", async () => {
-    await launchWith([FOLDER], [{ name: "mark", command: writeMarkCommand(), restart: "never" }]);
+    await launchWith(
+      [FOLDER],
+      [{ name: "mark", command: writeMarkCommand(), restart: "never", folder: FOLDER }]
+    );
     await expect.poll(() => fs.existsSync(path.join(FOLDER, MARK))).toBe(true);
   });
 });
@@ -177,5 +182,31 @@ test.describe("構成はフォルダごと", () => {
     await waitForPaneCount(page, 1);
     expect(await titles()).toEqual(["system"]);
     await closeQuietly();
+  });
+});
+
+/**
+ * サービスもフォルダごと（2026-10-11）。本番のサービスを全体に書くと、開発用の
+ * PaneDeck でも動き、並べると二重に動く。設定に読み込まれたかは画面の一覧で見る
+ */
+test.describe("サービスはフォルダごと", () => {
+  /** 起こし直しても害の無い、すぐ終わるコマンド */
+  const quick = (name: string, folder?: string) => ({
+    name,
+    command: `node -e ""`,
+    restart: "never",
+    ...(folder ? { folder } : {}),
+  });
+  const serviceNames = () =>
+    page.evaluate(async () => (await window.deck.listServices()).map((s) => s.name));
+
+  test("フォルダを開くと、そのフォルダのものだけが動く", async () => {
+    await launchWith([FOLDER], [quick("全体"), quick("ここ", FOLDER), quick("よそ", OTHER_FOLDER)]);
+    await expect.poll(serviceNames).toEqual(["ここ"]);
+  });
+
+  test("フォルダを開かなければ、folder の無いものだけが動く（今までどおり）", async () => {
+    await launchWith([], [quick("全体"), quick("ここ", FOLDER)]);
+    await expect.poll(serviceNames).toEqual(["全体"]);
   });
 });
