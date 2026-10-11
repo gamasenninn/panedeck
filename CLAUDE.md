@@ -27,7 +27,8 @@ node-pty + xterm.js。
 - 裏で走らせ続けるコマンド（#29）・出来事の記録 `events-YYYYMMDD.jsonl`（#36）
 - **フォルダを開いて起動**（`PaneDeck.exe C:\system`）: VS Code の `code <フォルダ>` と
   同じ考えで、「+ セッション追加」も裏のコマンドもそのフォルダで動く。フォルダごとの
-  設定（`.panedeck/`）は、信頼の確認とセットで後から
+  設定（`.panedeck/`）は、信頼の確認とセットで後から。インストーラが PATH を通すので
+  `panedeck .` で起動できる（`build/path-entry.ps1`。PATH はレジストリを直に読み書きし、自分の 1 項目以外に触らない）
 - **2 つ目は起動しない**: 同じ設定を読むと会話もサービスも二重になる。鍵は設定の
   場所ごと（E2E は userData を設定の場所へ寄せる。寄せないと開発者の PaneDeck に負ける）
 
@@ -197,7 +198,7 @@ panedeck/
 ├── types/
 │   ├── panedeck.d.ts        # 層をまたぐ受け渡しの形（Session / DeckApi など）
 │   └── globals.d.ts         # window.deck・xterm グローバル・E2E の足場
-├── build/               # アイコン（svg が正、png は生成物）
+├── build/               # アイコン（svg が正、png は生成物）・インストーラの追加分（installer.nsh / path-entry.ps1）
 ├── docs/
 │   ├── HANDOVER.md          # 引き継ぎ（作業の前に必ず読む）
 │   ├── mailbox.md           # 郵便受けの決まり（送り手・受け手）

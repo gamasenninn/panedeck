@@ -42,8 +42,13 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
+  # インストーラが PATH を通す（panedeck . で起動できる）。中身は build/path-entry.ps1
+  extraResources:
+    - from: build/path-entry.ps1
+      to: path-entry.ps1
 
 nsis:
+  include: build/installer.nsh
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false

@@ -232,3 +232,8 @@ test("同じ設定で 2 つ目を起動すると、2 つ目はすぐに終わる
     "PaneDeck はすでに動いています。2 つ目は起動しませんでした"
   );
 });
+
+/** インストーラが PATH を通すときに呼ぶスクリプト（build/installer.nsh）が、入れた先にある */
+test("PATH を通すスクリプトが resources に入っている", () => {
+  expect(fs.existsSync(path.join(path.dirname(EXE), "resources", "path-entry.ps1"))).toBe(true);
+});

@@ -321,8 +321,11 @@ So the events are appended to `events-YYYYMMDD.jsonl` beside the pane logs, unde
 Like `code <folder>`, you can start PaneDeck in a folder:
 
 ```
-PaneDeck.exe C:\system
+cd C:\system
+panedeck .
 ```
+
+The Windows installer adds its folder to your user `PATH` (open a new terminal afterwards), so `panedeck` works from anywhere; uninstalling removes it again. Only that one entry is touched.
 
 - **+ New session** opens a pane there without asking where; the 📁 button next to it picks another place
 - Services run there, so a command can use paths relative to the folder
