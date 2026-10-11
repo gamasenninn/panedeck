@@ -1,6 +1,7 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 import type { ElectronApplication, Page } from "@playwright/test";
 import fs from "fs";
+import { spawn } from "child_process";
 import os from "os";
 import path from "path";
 import {
@@ -32,6 +33,8 @@ const EXE = path.resolve(
 
 const TEMP_DIR = path.join(os.tmpdir(), "panedeck-packaged-test");
 const SETTINGS_PATH = path.join(TEMP_DIR, "settings.json");
+/** 開いて起動するフォルダ（`PaneDeck.exe <フォルダ>`） */
+const WORK = path.join(TEMP_DIR, "work");
 
 const MARKER = "PANEDECK_PACKAGED_OK";
 
@@ -55,11 +58,11 @@ test.beforeAll(async () => {
   }
 
   fs.rmSync(TEMP_DIR, { recursive: true, force: true });
-  fs.mkdirSync(TEMP_DIR, { recursive: true });
+  fs.mkdirSync(WORK, { recursive: true });
 
   electronApp = await electron.launch({
     executablePath: EXE,
-    args: [],
+    args: [WORK],
     env: {
       ...process.env,
       PANEDECK_SETTINGS_PATH: SETTINGS_PATH,
@@ -198,4 +201,34 @@ test("パッケージ版でも画面から状態を判定する", async () => {
   expect(status).toBe("ready");
 
   await electronApp.evaluate(({}, id) => global.__sessionManager.close(id), created.id);
+});
+
+/**
+ * パッケージ版は引数の並びが開発時と違う（`[exe, フォルダ]`。開発時は
+ * `[electron, アプリのパス, フォルダ]`）。読み飛ばす数を間違えると、フォルダが
+ * 無視されるか、exe 自身をフォルダとして読む
+ */
+test("開いたフォルダがタイトルに出る", async () => {
+  await expect(page).toHaveTitle(`${WORK} — PaneDeck`);
+});
+
+test("同じ設定で 2 つ目を起動すると、2 つ目はすぐに終わる", async () => {
+  const code = await new Promise<number | null>((resolve, reject) => {
+    const child = spawn(EXE, [WORK], {
+      env: { ...process.env, PANEDECK_SETTINGS_PATH: SETTINGS_PATH },
+      stdio: "ignore",
+    });
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("2 つ目が 15 秒たっても終わらない（起動してしまった）"));
+    }, 15_000);
+    child.on("exit", (exitCode) => {
+      clearTimeout(timer);
+      resolve(exitCode);
+    });
+  });
+  expect(code).toBe(0);
+  await expect(page.getByTestId("message")).toHaveText(
+    "PaneDeck はすでに動いています。2 つ目は起動しませんでした"
+  );
 });
