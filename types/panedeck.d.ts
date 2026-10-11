@@ -349,6 +349,8 @@ export interface DeckApi {
   isStale(): Promise<boolean>;
   /** 起動の引数で開いたフォルダ（2026-10-11）。開いていなければ空 */
   openFolder(): Promise<OpenFolder>;
+  /** メインプロセスからの知らせ（2 つ目を起動しなかった、など） */
+  onNotice(cb: (text: string) => void): void;
   /** 全終了の直前の構成が何個ぶん残っているか（2026-10-09） */
   countPrevious(): Promise<number>;
   /** 全終了の直前の構成に戻す。人が押したときだけ */

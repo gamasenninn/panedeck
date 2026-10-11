@@ -25,6 +25,8 @@ const deck: DeckApi = {
   listTriggers: () => ipcRenderer.invoke("trigger:list"),
   isStale: () => ipcRenderer.invoke("app:stale"),
   openFolder: () => ipcRenderer.invoke("app:openFolder"),
+  onNotice: (cb: (text: string) => void) =>
+    ipcRenderer.on("app:notice", (_event, text: string) => cb(text)),
   countPrevious: () => ipcRenderer.invoke("workspace:previous"),
   restorePrevious: () => ipcRenderer.invoke("workspace:restorePrevious"),
   releaseTrigger: (watch: string) => ipcRenderer.invoke("trigger:release", watch),

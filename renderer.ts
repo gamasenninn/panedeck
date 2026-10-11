@@ -1139,6 +1139,9 @@ async function showOpenFolder() {
   }
 }
 
+// 2 つ目の PaneDeck を起動しようとしたとき、こちらが前に出て知らせる（2026-10-11）
+api.onNotice((text) => showMessage(text, { error: true }));
+
 setupAgentSelect();
 loadSettings();
 showOpenFolder();

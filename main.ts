@@ -11,6 +11,7 @@ import type {
   PtyFactoryOptions,
   Settings,
   WorkspaceEntry,
+  OpenFolder,
 } from "./types/panedeck";
 import { SessionManager } from "./lib/session-manager";
 import { saveWorkspace, loadWorkspace, tryLoadWorkspace } from "./lib/workspace";
@@ -23,6 +24,7 @@ import { resumePlan, shouldRetryFresh } from "./lib/resume-plan";
 import { ServiceRunner } from "./lib/service-runner";
 import { spawnService } from "./lib/spawn-service";
 import { folderFromArgv } from "./lib/open-folder";
+import { secondLaunchNotice } from "./lib/second-launch";
 import { readSettings, updateSettings } from "./lib/settings";
 import { LogWriter, type LogFailure } from "./lib/log-writer";
 import { EventLog } from "./lib/event-log";
@@ -740,6 +742,38 @@ const openFolder = folderFromArgv(process.argv, {
   },
 });
 ipcMain.handle("app:openFolder", () => openFolder);
+
+/**
+ * 2 つ目の PaneDeck は起動しない（2026-10-11）。
+ *
+ * 2 つ目は同じ設定を読むので、前回の構成を復元して**同じ会話を二重に再開し**、
+ * 裏のコマンドもトリガーも二重に動く。2 つ目はすぐに終わり、1 つ目が前に出て知らせる。
+ *
+ * ★ 鍵は**設定の場所ごと**（Electron の鍵は userData ごと）。設定の場所を差し替えて
+ * いるとき（E2E）は userData もそこへ寄せる。寄せないと、E2E のアプリが開発者の
+ * 動かしている PaneDeck を「すでに動いている」と見て終わる
+ */
+if (process.env.PANEDECK_SETTINGS_PATH) {
+  app.setPath("userData", path.dirname(process.env.PANEDECK_SETTINGS_PATH));
+}
+// 2 つ目が開こうとしたフォルダは、引数の並びに頼らず、2 つ目が自分で読んで渡す
+if (!app.requestSingleInstanceLock({ ...openFolder })) {
+  app.exit(0);
+}
+app.on("second-instance", (_event, _argv, _cwd, requested) => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  const samePath =
+    process.platform === "win32"
+      ? (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+      : undefined;
+  mainWindow.webContents.send(
+    "app:notice",
+    secondLaunchNotice(openFolder, (requested ?? {}) as OpenFolder, samePath)
+  );
+});
 ipcMain.handle("app:stale", () => {
   buildWatch ??= new BuildWatch(
     process.env.PANEDECK_BUILD_DIR || path.join(app.getAppPath(), "dist")

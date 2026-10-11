@@ -4,7 +4,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 
-const APP_PATH = path.resolve(__dirname, "..", "..", "..");
+export const APP_PATH = path.resolve(__dirname, "..", "..", "..");
 
 /**
  * 起動ごとに用意した一時ディレクトリ。closeApp で消す。

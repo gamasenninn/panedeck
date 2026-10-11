@@ -328,6 +328,8 @@ PaneDeck.exe C:\system
 - Services run there, so a command can use paths relative to the folder
 - The window title shows the folder. A folder that does not exist is reported, not silently ignored
 
+Only one PaneDeck runs per settings location. A second launch would restore the same panes, resume the same conversations and start the services again, so it exits at once; the running window comes to the front and says so, including when the second launch asked for a different folder.
+
 Per-folder settings (a `.panedeck/` inside the folder) are not there yet: opening a folder would then run the commands it contains, so it waits for a trust prompt like VS Code's.
 
 ### Keeping a command running (services)

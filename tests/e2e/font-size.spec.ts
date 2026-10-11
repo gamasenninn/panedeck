@@ -106,6 +106,11 @@ test("変更で再フィットが走り、pty 側の桁数・行数も変わる"
   await givenPanes(1);
   await setFontSize(10);
   await expect.poll(paneFontSizes).toEqual([10]);
+  // ★ 作った直後の仮の大きさ（80x24）を「小さい文字の寸法」として掴まない（2026-10-11）。
+  // E2E の userData を設定の場所へ寄せて、毎回まっさらな Chromium で起動するように
+  // なったら、測り直しが届く前にここを読むようになった。80 を掴むと、文字 24 の
+  // 正しい寸法（幅 1400px で 95 桁）と比べて落ちる
+  await expect.poll(async () => (await ptySize()).cols).not.toBe(80);
   const small = await ptySize();
 
   await setFontSize(24);
